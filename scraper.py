@@ -49,8 +49,20 @@ def write_products(output_path: Path, products: list[Product]) -> None:
     )
 
 
+def write_price_snapshots(output_path: Path, snapshots: list[ProductPriceSnapshot]) -> None:
+    output_path.write_text(
+        json.dumps([asdict(snapshot) for snapshot in snapshots], indent=2),
+        encoding="utf-8",
+    )
+
+
+def _product_key(name: str, packaging_format: str) -> str:
+    return f"{(name or '').strip()}__{(packaging_format or '').strip()}".lower()
+
+
 @dataclass
 class ProductPriceSnapshot:
+    product_key: str
     price: str
     unit_price: str
     source_url: str
@@ -59,10 +71,10 @@ class ProductPriceSnapshot:
 
 @dataclass
 class Product:
+    product_key: str
     name: str
     packaging_format: str
     image: str
-    prices: list[ProductPriceSnapshot]
 
 
 @dataclass
@@ -226,6 +238,12 @@ async def discover_category_urls(
     link_data = await page.locator(category_link_selector).evaluate_all(
         "els => els.map(e => ({ href: e.getAttribute('href'), text: (e.textContent || '').trim() }))"
     )
+    if not link_data:
+        # Fallback: attempt to discover shop/category links even if the provided selector doesn't match.
+        link_data = await page.locator("a[href]").evaluate_all(
+            "els => els.map(e => ({ href: e.getAttribute('href'), text: (e.textContent || '').trim() }))"
+        )
+
     categories: list[CategoryLink] = []
     seen: set[str] = set()
     for item in link_data:
@@ -233,6 +251,9 @@ async def discover_category_urls(
         if not href:
             continue
         absolute = urljoin(start_url, href)
+        parsed = urlparse(absolute)
+        if "/shop/" not in parsed.path:
+            continue
         if absolute in seen:
             continue
         seen.add(absolute)
@@ -256,7 +277,7 @@ async def scrape_products(
     query: str | None,
     headless: bool,
     manual_wait_seconds: int,
-) -> list[Product]:
+) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
     title = (await page.title()).strip().lower()
@@ -297,6 +318,7 @@ async def scrape_products(
 
     query_normalized = query.strip().lower() if query else ""
     products: list[Product] = []
+    snapshots: list[ProductPriceSnapshot] = []
 
     for index in range(count):
         if len(products) >= limit:
@@ -320,23 +342,28 @@ async def scrape_products(
         if query_normalized and query_normalized not in name.lower():
             continue
 
+        product_key = _product_key(name, packaging_format)
+        scraped_at = datetime.now(timezone.utc).isoformat()
+
         products.append(
             Product(
+                product_key=product_key,
                 name=name,
                 packaging_format=packaging_format,
                 image=image,
-                prices=[
-                    ProductPriceSnapshot(
-                        price=price,
-                        unit_price=unit_price,
-                        source_url=url,
-                        scraped_at=datetime.now(timezone.utc).isoformat(),
-                    )
-                ],
+            )
+        )
+        snapshots.append(
+            ProductPriceSnapshot(
+                product_key=product_key,
+                price=price,
+                unit_price=unit_price,
+                source_url=url,
+                scraped_at=scraped_at,
             )
         )
 
-    return products
+    return products, snapshots
 
 
 async def main() -> None:
@@ -347,9 +374,21 @@ async def main() -> None:
         required=True,
         help="Target page URL. Repeat this argument to scrape multiple URLs.",
     )
-    parser.add_argument("--product-selector", default=".product-item", help="CSS selector for product cards")
-    parser.add_argument("--name-selector", default=".product-title", help="CSS selector for product name within card")
-    parser.add_argument("--price-selector", default=".product-price", help="CSS selector for product price within card")
+    parser.add_argument(
+        "--product-selector",
+        default="div[data-testid^='product-'][data-testid$='-000']",
+        help="CSS selector for product cards",
+    )
+    parser.add_argument(
+        "--name-selector",
+        default="[data-testid='product-title']",
+        help="CSS selector for product name within card",
+    )
+    parser.add_argument(
+        "--price-selector",
+        default="[data-testid='price-dollars']",
+        help="CSS selector for product price dollars within card",
+    )
     parser.add_argument(
         "--price-cents-selector",
         default="[data-testid='price-cents']",
@@ -357,14 +396,29 @@ async def main() -> None:
     )
     parser.add_argument(
         "--unit-price-selector",
-        default="[data-testid='product-subtitle']",
-        help="CSS selector for unit price/subtitle within card",
+        default="[data-testid='non-promo-unit-price']",
+        help="CSS selector for unit price (e.g. '$2.99/100g') within card",
     )
-    parser.add_argument("--image-selector", default="img", help="CSS selector for product image within card")
+    parser.add_argument(
+        "--image-selector",
+        default="[data-testid='product-image']",
+        help="CSS selector for product image within card",
+    )
     parser.add_argument("--wait-for-selector", default=None, help="Optional selector to wait for before scraping")
     parser.add_argument("--query", default=None, help="Optional name filter")
     parser.add_argument("--limit", type=int, default=20, help="Maximum products to return")
     parser.add_argument("--output", default="products.json", help="Output JSON file")
+    parser.add_argument(
+        "--price-output",
+        default="price_snapshots.json",
+        help="Output JSON file for price snapshots",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Maximum number of resolved URLs (pages) to scrape. Useful for small test runs.",
+    )
     parser.add_argument(
         "--crawl-category-pages",
         action="store_true",
@@ -454,11 +508,13 @@ async def main() -> None:
     args = parser.parse_args()
 
     all_products: list[Product] = []
+    all_snapshots: list[ProductPriceSnapshot] = []
     progress_path = Path(args.progress_file)
     progress = load_progress(progress_path)
     discovered_categories_all: list[CategoryLink] = []
     rate_limit_hit = False
     output_path = Path(args.output)
+    price_output_path = Path(args.price_output)
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=not args.headed)
@@ -558,6 +614,8 @@ async def main() -> None:
 
         completed_set = set(progress.completed_urls) if args.resume else set()
         to_scrape = [u for u in resolved_urls if u not in completed_set]
+        if args.max_pages is not None:
+            to_scrape = to_scrape[: max(0, int(args.max_pages))]
         if args.resume:
             print(f"Resume enabled: skipping {len(resolved_urls) - len(to_scrape)} already-completed URLs")
 
@@ -566,7 +624,7 @@ async def main() -> None:
             attempt = 0
             while True:
                 try:
-                    products = await scrape_products(
+                    products, snapshots = await scrape_products(
                         page=page,
                         url=current_url,
                         product_selector=args.product_selector,
@@ -586,7 +644,7 @@ async def main() -> None:
                     print(f"WARNING: {error}")
                     if attempt >= max(0, int(args.max_rate_limit_retries)):
                         rate_limit_hit = True
-                        products = []
+                        products, snapshots = [], []
                         break
                     attempt += 1
                     wait_seconds = max(0, int(args.rate_limit_wait_seconds))
@@ -596,12 +654,14 @@ async def main() -> None:
             if rate_limit_hit:
                 break
             all_products.extend(products)
+            all_snapshots.extend(snapshots)
 
             progress.completed_urls.append(current_url)
             save_progress(progress_path, progress)
 
             if args.flush_every_url:
                 write_products(output_path, all_products)
+                write_price_snapshots(price_output_path, all_snapshots)
 
             if storage_state_path:
                 await context.storage_state(path=str(storage_state_path))
@@ -615,11 +675,11 @@ async def main() -> None:
         await browser.close()
 
     if args.dedupe:
-        merged: dict[tuple[str, str], Product] = {}
-        merged_order: list[tuple[str, str]] = []
+        merged: dict[str, Product] = {}
+        merged_order: list[str] = []
 
         for product in all_products:
-            key = (product.name.strip().lower(), product.packaging_format.strip().lower())
+            key = product.product_key
             existing = merged.get(key)
             if existing is None:
                 merged[key] = product
@@ -628,7 +688,6 @@ async def main() -> None:
 
             if (not existing.image) and product.image:
                 existing.image = product.image
-            existing.prices.extend(product.prices)
 
         all_products = [merged[key] for key in merged_order]
 
@@ -648,7 +707,9 @@ async def main() -> None:
         print(f"Saved {len(unique_categories)} category URLs to {category_output_path}")
 
     write_products(output_path, all_products)
+    write_price_snapshots(price_output_path, all_snapshots)
     print(f"Saved {len(all_products)} products to {output_path}")
+    print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
 

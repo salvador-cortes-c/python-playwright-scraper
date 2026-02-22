@@ -5,9 +5,13 @@ __pycache__/
 
 # Playwright / scraper outputs
 products.json
+price_snapshots.json
 category_urls*.json
 scrape_progress.json
 storage_state.json
+
+# Local dev utilities
+_probe_selectors.py
 
 # Editor
 .vscode/
