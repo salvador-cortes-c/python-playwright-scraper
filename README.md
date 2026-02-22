@@ -9,13 +9,13 @@ cd python-playwright-scraper
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m playwright install chromium
+./.venv/bin/python -m playwright install chromium
 ```
 
 ## Run
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://example.com/supermarket/search?q=milk" \
   --product-selector ".product-item" \
   --name-selector ".product-title" \
@@ -31,7 +31,7 @@ python scraper.py \
 Repeat `--url` to scrape multiple pages in one run:
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://example.com/page-1" \
   --url "https://example.com/page-2" \
   --product-selector ".product-item" \
@@ -48,7 +48,7 @@ python scraper.py \
 For category pages that use `?pg=`, enable automatic page discovery:
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
   --crawl-category-pages \
   --product-selector "div._1afq4wy0" \
@@ -70,7 +70,7 @@ python scraper.py \
 If a page lists category buttons/links, discover category URLs first and then scrape all their pages:
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
   --category-name-selector "button._7zlpdc" \
@@ -96,7 +96,7 @@ python scraper.py \
 If you only want the category list (no product scraping):
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
   --category-name-selector "button._7zlpdc" \
@@ -123,7 +123,7 @@ New World category pages may return a Cloudflare challenge (`Just a moment...`) 
 Use headed mode and allow time to complete verification manually:
 
 ```bash
-python scraper.py \
+./.venv/bin/python scraper.py \
   --url "https://www.newworld.co.nz/shop/category/beer-wine-and-cider/beer/new-zealand-beers?pg=1" \
   --url "https://www.newworld.co.nz/shop/category/beer-wine-and-cider/beer/new-zealand-beers?pg=2" \
   --product-selector "article" \
@@ -143,7 +143,7 @@ If selectors need tuning after challenge verification, inspect the page and adju
 Use `--query` to keep only matching products:
 
 ```bash
-python scraper.py --url "https://example.com" --query "milk"
+./.venv/bin/python scraper.py --url "https://example.com" --query "milk"
 ```
 
 ## Output

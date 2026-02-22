@@ -219,7 +219,21 @@ async def choose_store(
         )
 
     await page.click(ribbon_button_selector, timeout=30000)
-    await page.click(change_store_link_selector, timeout=30000)
+
+    # The "Change store" anchor can be present but have pointer-events intercepted by a tooltip button.
+    # Try: click link (force), then click tooltip button, then direct navigation.
+    try:
+        await page.locator(change_store_link_selector).click(timeout=15000, force=True)
+    except Exception:
+        try:
+            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
+        except Exception:
+            href = await page.locator(change_store_link_selector).get_attribute("href")
+            if href:
+                await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
+            else:
+                raise
+
     await page.wait_for_load_state("domcontentloaded")
 
     await page.click(store_bar_selector, timeout=30000)
@@ -286,7 +300,19 @@ async def discover_store_names(
         )
 
     await page.click(ribbon_button_selector, timeout=30000)
-    await page.click(change_store_link_selector, timeout=30000)
+
+    try:
+        await page.locator(change_store_link_selector).click(timeout=15000, force=True)
+    except Exception:
+        try:
+            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
+        except Exception:
+            href = await page.locator(change_store_link_selector).get_attribute("href")
+            if href:
+                await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
+            else:
+                raise
+
     await page.wait_for_load_state("domcontentloaded")
 
     await page.click(store_bar_selector, timeout=30000)
@@ -793,7 +819,14 @@ async def main() -> None:
         all_snapshots = load_price_snapshots(price_output_path)
 
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=not args.headed)
+        headless = not args.headed
+        try:
+            browser = await playwright.chromium.launch(headless=headless)
+        except Exception as exc:
+            raise RuntimeError(
+                "Playwright browser binaries are not installed for this scraper's venv. "
+                "Run: ./.venv/bin/python -m playwright install chromium"
+            ) from exc
         storage_state_path = Path(args.storage_state)
         context = await browser.new_context(
             storage_state=str(storage_state_path) if storage_state_path.exists() else None
