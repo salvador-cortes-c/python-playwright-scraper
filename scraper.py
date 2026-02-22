@@ -247,6 +247,88 @@ async def choose_store(
     return selected
 
 
+async def discover_store_names(
+    page,
+    start_url: str,
+    headless: bool,
+    manual_wait_seconds: int,
+    ribbon_button_selector: str,
+    change_store_link_selector: str,
+    store_bar_selector: str,
+) -> list[str]:
+    response = await page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
+    title = (await page.title()).strip().lower()
+    body_preview = (await page.locator("body").inner_text())[:1000].lower()
+    challenge_detected = _is_bot_challenge(
+        response.status if response else None,
+        title,
+        body_preview,
+    )
+    rate_limited = _is_rate_limited(
+        response.status if response else None,
+        title,
+        body_preview,
+    )
+
+    if rate_limited:
+        raise RateLimitError("Cloudflare rate limit detected while discovering stores (Error 1015/429).")
+
+    if challenge_detected and manual_wait_seconds > 0:
+        print(
+            f"Bot challenge detected. Waiting {manual_wait_seconds}s for manual verification in browser..."
+        )
+        await page.wait_for_timeout(manual_wait_seconds * 1000)
+
+    if challenge_detected and headless:
+        raise RuntimeError(
+            "Target page returned a bot challenge (Cloudflare). "
+            "Re-run with --headed and --manual-wait-seconds 60, then complete verification manually."
+        )
+
+    await page.click(ribbon_button_selector, timeout=30000)
+    await page.click(change_store_link_selector, timeout=30000)
+    await page.wait_for_load_state("domcontentloaded")
+
+    await page.click(store_bar_selector, timeout=30000)
+    await page.wait_for_timeout(400)
+
+    # Store list is rendered as role=option elements (may be virtualized)
+    options = page.locator("[role='option']")
+    seen: set[str] = set()
+
+    stagnation = 0
+    last_count = 0
+    last_seen_size = 0
+    for _ in range(60):
+        count = await options.count()
+        for index in range(count):
+            text = (await options.nth(index).inner_text()).strip()
+            normalized = " ".join(text.split())
+            if normalized:
+                seen.add(normalized)
+
+        # Try to scroll the list to load more options
+        await page.keyboard.press("PageDown")
+        await page.wait_for_timeout(250)
+
+        if count == last_count and len(seen) == last_seen_size:
+            stagnation += 1
+        else:
+            stagnation = 0
+        last_count = count
+        last_seen_size = len(seen)
+
+        if stagnation >= 6:
+            break
+
+    stores = sorted(seen)
+    if stores:
+        print(f"Discovered {len(stores)} stores")
+    else:
+        print("WARNING: No stores discovered (role=option not found).")
+    return stores
+
+
 def _with_page_number(url: str, page_number: int) -> str:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
@@ -562,6 +644,17 @@ async def main() -> None:
         help="Choose a store before scraping (affects prices/availability).",
     )
     parser.add_argument(
+        "--scrape-all-stores",
+        action="store_true",
+        help="Discover all stores and scrape the same URLs once per store in a single run.",
+    )
+    parser.add_argument(
+        "--max-stores",
+        type=int,
+        default=None,
+        help="Optional cap on how many stores to scrape in --scrape-all-stores mode.",
+    )
+    parser.add_argument(
         "--store-name",
         default=None,
         help="Exact store name to click after opening the store list (optional).",
@@ -695,7 +788,26 @@ async def main() -> None:
         )
         page = await context.new_page()
 
-        if args.choose_store:
+        if args.scrape_all_stores:
+            stores = await discover_store_names(
+                page=page,
+                start_url=args.url[0],
+                headless=not args.headed,
+                manual_wait_seconds=max(0, args.manual_wait_seconds),
+                ribbon_button_selector=args.store_ribbon_button_selector,
+                change_store_link_selector=args.store_change_link_selector,
+                store_bar_selector=args.store_bar_selector,
+            )
+            if args.max_stores is not None:
+                stores = stores[: max(0, int(args.max_stores))]
+
+            # In this mode, we don't want resume to skip URLs for subsequent stores.
+            args.resume = False
+
+        else:
+            stores = []
+
+        if args.choose_store and not args.scrape_all_stores:
             await choose_store(
                 page=page,
                 start_url=args.url[0],
@@ -708,75 +820,72 @@ async def main() -> None:
                 store_index=args.store_index,
             )
 
-        resolved_urls: list[str] = []
-        seen_urls: set[str] = set()
+        async def resolve_urls() -> list[str]:
+            resolved_urls: list[str] = []
+            seen_urls: set[str] = set()
 
-        for input_url in args.url:
-            expanded_urls = [input_url]
+            for input_url in args.url:
+                expanded_urls = [input_url]
 
-            if args.discover_category_urls:
-                try:
-                    discovered_categories = await discover_category_urls(
-                        page=page,
-                        start_url=input_url,
-                        category_link_selector=args.category_link_selector,
-                        category_name_selector=args.category_name_selector,
-                        headless=not args.headed,
-                        manual_wait_seconds=max(0, args.manual_wait_seconds),
-                    )
-                except RateLimitError as error:
-                    print(f"WARNING: {error}")
-                    rate_limit_hit = True
-                    break
-                discovered_categories_all.extend(discovered_categories)
-                expanded_urls = [item.url for item in discovered_categories]
-                print(
-                    f"Discovered {len(expanded_urls)} category URLs from: {input_url}"
-                )
-                if not expanded_urls:
-                    print(
-                        "WARNING: No category URLs were discovered. "
-                        "The page layout or selectors may have changed; try adjusting --category-link-selector and --category-name-selector."
-                    )
-                    expanded_urls = [input_url]
-
-            urls_after_category_discovery: list[str] = []
-            for discovered_url in expanded_urls:
-                urls_after_category_discovery.append(discovered_url)
-
-            expanded_urls = urls_after_category_discovery
-
-            if args.crawl_category_pages:
-                paginated_urls: list[str] = []
-                for category_url in expanded_urls:
+                if args.discover_category_urls:
                     try:
-                        discovered_pages = await discover_category_page_urls(
+                        discovered_categories = await discover_category_urls(
                             page=page,
-                            start_url=category_url,
+                            start_url=input_url,
+                            category_link_selector=args.category_link_selector,
+                            category_name_selector=args.category_name_selector,
                             headless=not args.headed,
                             manual_wait_seconds=max(0, args.manual_wait_seconds),
                         )
                     except RateLimitError as error:
                         print(f"WARNING: {error}")
-                        rate_limit_hit = True
-                        break
+                        return []
+                    discovered_categories_all.extend(discovered_categories)
+                    expanded_urls = [item.url for item in discovered_categories]
                     print(
-                        f"Discovered {len(discovered_pages)} paginated URLs for category: {category_url}"
+                        f"Discovered {len(expanded_urls)} category URLs from: {input_url}"
                     )
-                    paginated_urls.extend(discovered_pages)
-                    if args.delay_seconds > 0:
-                        jitter = max(0.0, float(args.delay_jitter_seconds))
-                        wait = max(0.0, float(args.delay_seconds)) + random.random() * jitter
-                        await page.wait_for_timeout(int(wait * 1000))
-                expanded_urls = paginated_urls
-            if rate_limit_hit:
-                break
+                    if not expanded_urls:
+                        print(
+                            "WARNING: No category URLs were discovered. "
+                            "The page layout or selectors may have changed; try adjusting --category-link-selector and --category-name-selector."
+                        )
+                        expanded_urls = [input_url]
 
-            for expanded_url in expanded_urls:
-                if expanded_url in seen_urls:
-                    continue
-                seen_urls.add(expanded_url)
-                resolved_urls.append(expanded_url)
+                if args.crawl_category_pages:
+                    paginated_urls: list[str] = []
+                    for category_url in expanded_urls:
+                        try:
+                            discovered_pages = await discover_category_page_urls(
+                                page=page,
+                                start_url=category_url,
+                                headless=not args.headed,
+                                manual_wait_seconds=max(0, args.manual_wait_seconds),
+                            )
+                        except RateLimitError as error:
+                            print(f"WARNING: {error}")
+                            return []
+                        print(
+                            f"Discovered {len(discovered_pages)} paginated URLs for category: {category_url}"
+                        )
+                        paginated_urls.extend(discovered_pages)
+                        if args.delay_seconds > 0:
+                            jitter = max(0.0, float(args.delay_jitter_seconds))
+                            wait = max(0.0, float(args.delay_seconds)) + random.random() * jitter
+                            await page.wait_for_timeout(int(wait * 1000))
+                    expanded_urls = paginated_urls
+
+                for expanded_url in expanded_urls:
+                    if expanded_url in seen_urls:
+                        continue
+                    seen_urls.add(expanded_url)
+                    resolved_urls.append(expanded_url)
+
+            return resolved_urls
+
+        resolved_urls = await resolve_urls()
+        if not resolved_urls and (args.discover_category_urls or args.crawl_category_pages):
+            rate_limit_hit = True
 
         if args.categories_only:
             category_output_path = Path(args.category_output or "category_urls.json")
@@ -796,67 +905,94 @@ async def main() -> None:
             await browser.close()
             return
 
-        completed_set = set(progress.completed_urls) if args.resume else set()
-        to_scrape = [u for u in resolved_urls if u not in completed_set]
-        if args.max_pages is not None:
-            to_scrape = to_scrape[: max(0, int(args.max_pages))]
-        if args.resume:
-            print(f"Resume enabled: skipping {len(resolved_urls) - len(to_scrape)} already-completed URLs")
+        async def scrape_urls_for_current_store(to_scrape: list[str]) -> None:
+            nonlocal rate_limit_hit
 
-        for current_url in to_scrape:
-            print(f"Scraping URL: {current_url}")
-            attempt = 0
-            while True:
-                try:
-                    products, snapshots = await scrape_products(
-                        page=page,
-                        url=current_url,
-                        product_selector=args.product_selector,
-                        name_selector=args.name_selector,
-                        price_selector=args.price_selector,
-                        price_cents_selector=args.price_cents_selector,
-                        unit_price_selector=args.unit_price_selector,
-                        image_selector=args.image_selector,
-                        limit=max(1, args.limit),
-                        wait_for_selector=args.wait_for_selector,
-                        query=args.query,
-                        headless=not args.headed,
-                        manual_wait_seconds=max(0, args.manual_wait_seconds),
-                    )
-                    break
-                except RateLimitError as error:
-                    print(f"WARNING: {error}")
-                    if attempt >= max(0, int(args.max_rate_limit_retries)):
-                        rate_limit_hit = True
-                        products, snapshots = [], []
+            completed_set = set(progress.completed_urls) if args.resume else set()
+            targets = [u for u in to_scrape if u not in completed_set]
+            if args.max_pages is not None:
+                targets = targets[: max(0, int(args.max_pages))]
+            if args.resume:
+                print(f"Resume enabled: skipping {len(to_scrape) - len(targets)} already-completed URLs")
+
+            for current_url in targets:
+                print(f"Scraping URL: {current_url}")
+                attempt = 0
+                while True:
+                    try:
+                        products, snapshots = await scrape_products(
+                            page=page,
+                            url=current_url,
+                            product_selector=args.product_selector,
+                            name_selector=args.name_selector,
+                            price_selector=args.price_selector,
+                            price_cents_selector=args.price_cents_selector,
+                            unit_price_selector=args.unit_price_selector,
+                            image_selector=args.image_selector,
+                            limit=max(1, args.limit),
+                            wait_for_selector=args.wait_for_selector,
+                            query=args.query,
+                            headless=not args.headed,
+                            manual_wait_seconds=max(0, args.manual_wait_seconds),
+                        )
                         break
-                    attempt += 1
-                    wait_seconds = max(0, int(args.rate_limit_wait_seconds))
-                    print(f"Waiting {wait_seconds}s then retrying ({attempt}/{args.max_rate_limit_retries})...")
-                    await page.wait_for_timeout(wait_seconds * 1000)
+                    except RateLimitError as error:
+                        print(f"WARNING: {error}")
+                        if attempt >= max(0, int(args.max_rate_limit_retries)):
+                            rate_limit_hit = True
+                            products, snapshots = [], []
+                            break
+                        attempt += 1
+                        wait_seconds = max(0, int(args.rate_limit_wait_seconds))
+                        print(f"Waiting {wait_seconds}s then retrying ({attempt}/{args.max_rate_limit_retries})...")
+                        await page.wait_for_timeout(wait_seconds * 1000)
 
-            if rate_limit_hit:
-                break
-            all_products.extend(products)
-            all_snapshots.extend(snapshots)
+                if rate_limit_hit:
+                    break
+                all_products.extend(products)
+                all_snapshots.extend(snapshots)
 
-            progress.completed_urls.append(current_url)
-            save_progress(progress_path, progress)
+                if args.resume:
+                    progress.completed_urls.append(current_url)
+                    save_progress(progress_path, progress)
 
-            if args.flush_every_url:
-                write_products(output_path, all_products)
-                if args.append_snapshots:
-                    write_price_snapshots(price_output_path, merge_snapshots(load_price_snapshots(price_output_path), all_snapshots))
-                else:
-                    write_price_snapshots(price_output_path, all_snapshots)
+                if args.flush_every_url:
+                    write_products(output_path, all_products)
+                    if args.append_snapshots:
+                        write_price_snapshots(
+                            price_output_path,
+                            merge_snapshots(load_price_snapshots(price_output_path), all_snapshots),
+                        )
+                    else:
+                        write_price_snapshots(price_output_path, all_snapshots)
 
-            if storage_state_path:
-                await context.storage_state(path=str(storage_state_path))
+                if storage_state_path:
+                    await context.storage_state(path=str(storage_state_path))
 
-            if args.delay_seconds > 0:
-                jitter = max(0.0, float(args.delay_jitter_seconds))
-                wait = max(0.0, float(args.delay_seconds)) + random.random() * jitter
-                await page.wait_for_timeout(int(wait * 1000))
+                if args.delay_seconds > 0:
+                    jitter = max(0.0, float(args.delay_jitter_seconds))
+                    wait = max(0.0, float(args.delay_seconds)) + random.random() * jitter
+                    await page.wait_for_timeout(int(wait * 1000))
+
+        if args.scrape_all_stores and stores:
+            for store in stores:
+                print(f"\n=== Store: {store} ===")
+                await choose_store(
+                    page=page,
+                    start_url=args.url[0],
+                    headless=not args.headed,
+                    manual_wait_seconds=max(0, args.manual_wait_seconds),
+                    ribbon_button_selector=args.store_ribbon_button_selector,
+                    change_store_link_selector=args.store_change_link_selector,
+                    store_bar_selector=args.store_bar_selector,
+                    store_name=store,
+                    store_index=args.store_index,
+                )
+                await scrape_urls_for_current_store(resolved_urls)
+                if rate_limit_hit:
+                    break
+        else:
+            await scrape_urls_for_current_store(resolved_urls)
 
         await context.close()
         await browser.close()
