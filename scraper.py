@@ -717,6 +717,15 @@ async def main() -> None:
     )
     parser.add_argument("--headed", action="store_true", help="Run browser in headed mode")
     parser.add_argument(
+        "--headless-only",
+        action="store_true",
+        help=(
+            "Force headless mode (never show a Chromium window). "
+            "If Cloudflare blocks headless, run once without --headless-only + with --headed to complete verification, "
+            "then rerun headless using the saved storage_state.json."
+        ),
+    )
+    parser.add_argument(
         "--manual-wait-seconds",
         type=int,
         default=0,
@@ -767,6 +776,9 @@ async def main() -> None:
         help="Path to Playwright storage state JSON (cookies/localStorage) to reuse between runs",
     )
     args = parser.parse_args()
+
+    if args.headless_only:
+        args.headed = False
 
     all_products: list[Product] = []
     all_snapshots: list[ProductPriceSnapshot] = []
