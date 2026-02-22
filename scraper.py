@@ -240,7 +240,32 @@ async def choose_store(
     await page.wait_for_timeout(300)
 
     if store_name:
-        await page.get_by_text(store_name, exact=True).click(timeout=30000)
+        # Store lists can be virtualized and store labels may include extra suffixes like "Store details".
+        # Use a partial match against role=option, scrolling until the desired store is loaded.
+        normalized_target = " ".join((store_name or "").split()).strip()
+        normalized_target = normalized_target.removesuffix(" Store details").strip()
+        fallback_target = normalized_target.split(",")[0].strip() if "," in normalized_target else normalized_target
+
+        options = page.locator("[role='option']")
+        for _ in range(80):
+            filtered = options.filter(has_text=normalized_target)
+            if await filtered.count() > 0:
+                await filtered.first.click(timeout=30000)
+                break
+
+            if fallback_target and fallback_target != normalized_target:
+                filtered_fallback = options.filter(has_text=fallback_target)
+                if await filtered_fallback.count() > 0:
+                    await filtered_fallback.first.click(timeout=30000)
+                    break
+
+            await page.keyboard.press("PageDown")
+            await page.wait_for_timeout(150)
+        else:
+            raise RuntimeError(
+                f"Could not find store option matching '{normalized_target}'. "
+                "Try adjusting --store-name or selectors; the store list may have changed."
+            )
     else:
         options = page.locator("[role='option']")
         option_count = await options.count()
@@ -834,22 +859,29 @@ async def main() -> None:
         page = await context.new_page()
 
         if args.scrape_all_stores:
-            stores = await discover_store_names(
-                page=page,
-                start_url=args.url[0],
-                headless=not args.headed,
-                manual_wait_seconds=max(0, args.manual_wait_seconds),
-                ribbon_button_selector=args.store_ribbon_button_selector,
-                change_store_link_selector=args.store_change_link_selector,
-                store_bar_selector=args.store_bar_selector,
-            )
-            if args.max_stores is not None:
-                stores = stores[: max(0, int(args.max_stores))]
+            # For small runs (like --max-stores 5), selecting stores by index is far more reliable than
+            # relying on exact store-name text matching (option labels can vary / be virtualized).
+            store_indices: list[int] | None
+            if args.max_stores is not None and int(args.max_stores) > 0:
+                store_indices = list(range(int(args.max_stores)))
+                stores: list[str] = []
+            else:
+                store_indices = None
+                stores = await discover_store_names(
+                    page=page,
+                    start_url=args.url[0],
+                    headless=not args.headed,
+                    manual_wait_seconds=max(0, args.manual_wait_seconds),
+                    ribbon_button_selector=args.store_ribbon_button_selector,
+                    change_store_link_selector=args.store_change_link_selector,
+                    store_bar_selector=args.store_bar_selector,
+                )
 
             # In this mode, we don't want resume to skip URLs for subsequent stores.
             args.resume = False
 
         else:
+            store_indices = None
             stores = []
 
         if args.choose_store and not args.scrape_all_stores:
@@ -1019,23 +1051,41 @@ async def main() -> None:
                     wait = max(0.0, float(args.delay_seconds)) + random.random() * jitter
                     await page.wait_for_timeout(int(wait * 1000))
 
-        if args.scrape_all_stores and stores:
-            for store in stores:
-                print(f"\n=== Store: {store} ===")
-                await choose_store(
-                    page=page,
-                    start_url=args.url[0],
-                    headless=not args.headed,
-                    manual_wait_seconds=max(0, args.manual_wait_seconds),
-                    ribbon_button_selector=args.store_ribbon_button_selector,
-                    change_store_link_selector=args.store_change_link_selector,
-                    store_bar_selector=args.store_bar_selector,
-                    store_name=store,
-                    store_index=args.store_index,
-                )
-                await scrape_urls_for_current_store(resolved_urls)
-                if rate_limit_hit:
-                    break
+        if args.scrape_all_stores:
+            if store_indices is not None:
+                for index in store_indices:
+                    print(f"\n=== Store index: {index} ===")
+                    await choose_store(
+                        page=page,
+                        start_url=args.url[0],
+                        headless=not args.headed,
+                        manual_wait_seconds=max(0, args.manual_wait_seconds),
+                        ribbon_button_selector=args.store_ribbon_button_selector,
+                        change_store_link_selector=args.store_change_link_selector,
+                        store_bar_selector=args.store_bar_selector,
+                        store_name=None,
+                        store_index=index,
+                    )
+                    await scrape_urls_for_current_store(resolved_urls)
+                    if rate_limit_hit:
+                        break
+            elif stores:
+                for store in stores:
+                    print(f"\n=== Store: {store} ===")
+                    await choose_store(
+                        page=page,
+                        start_url=args.url[0],
+                        headless=not args.headed,
+                        manual_wait_seconds=max(0, args.manual_wait_seconds),
+                        ribbon_button_selector=args.store_ribbon_button_selector,
+                        change_store_link_selector=args.store_change_link_selector,
+                        store_bar_selector=args.store_bar_selector,
+                        store_name=store,
+                        store_index=args.store_index,
+                    )
+                    await scrape_urls_for_current_store(resolved_urls)
+                    if rate_limit_hit:
+                        break
         else:
             await scrape_urls_for_current_store(resolved_urls)
 
