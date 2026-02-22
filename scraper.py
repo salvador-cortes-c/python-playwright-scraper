@@ -56,6 +56,51 @@ def write_price_snapshots(output_path: Path, snapshots: list[ProductPriceSnapsho
     )
 
 
+def load_price_snapshots(path: Path) -> list[ProductPriceSnapshot]:
+    if not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+
+    snapshots: list[ProductPriceSnapshot] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            snapshots.append(ProductPriceSnapshot(**item))
+        except Exception:
+            continue
+    return snapshots
+
+
+def merge_snapshots(existing: list[ProductPriceSnapshot], new: list[ProductPriceSnapshot]) -> list[ProductPriceSnapshot]:
+    merged: list[ProductPriceSnapshot] = []
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+
+    def key(snapshot: ProductPriceSnapshot) -> tuple[str, str, str, str, str, str]:
+        return (
+            snapshot.product_key,
+            snapshot.scraped_at,
+            snapshot.source_url,
+            snapshot.price,
+            snapshot.unit_price,
+            snapshot.supermarket_name,
+        )
+
+    for snapshot in existing + new:
+        snapshot_key = key(snapshot)
+        if snapshot_key in seen:
+            continue
+        seen.add(snapshot_key)
+        merged.append(snapshot)
+
+    return merged
+
+
 def _product_key(name: str, packaging_format: str) -> str:
     return f"{(name or '').strip()}__{(packaging_format or '').strip()}".lower()
 
@@ -432,6 +477,11 @@ async def main() -> None:
         help="Output JSON file for price snapshots",
     )
     parser.add_argument(
+        "--append-snapshots",
+        action="store_true",
+        help="Append new price snapshots to the existing price output file (keeps history).",
+    )
+    parser.add_argument(
         "--max-pages",
         type=int,
         default=None,
@@ -533,6 +583,9 @@ async def main() -> None:
     rate_limit_hit = False
     output_path = Path(args.output)
     price_output_path = Path(args.price_output)
+
+    if args.append_snapshots:
+        all_snapshots = load_price_snapshots(price_output_path)
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=not args.headed)
@@ -679,7 +732,10 @@ async def main() -> None:
 
             if args.flush_every_url:
                 write_products(output_path, all_products)
-                write_price_snapshots(price_output_path, all_snapshots)
+                if args.append_snapshots:
+                    write_price_snapshots(price_output_path, merge_snapshots(load_price_snapshots(price_output_path), all_snapshots))
+                else:
+                    write_price_snapshots(price_output_path, all_snapshots)
 
             if storage_state_path:
                 await context.storage_state(path=str(storage_state_path))
@@ -725,7 +781,11 @@ async def main() -> None:
         print(f"Saved {len(unique_categories)} category URLs to {category_output_path}")
 
     write_products(output_path, all_products)
-    write_price_snapshots(price_output_path, all_snapshots)
+    if args.append_snapshots:
+        existing = load_price_snapshots(price_output_path)
+        write_price_snapshots(price_output_path, merge_snapshots(existing, all_snapshots))
+    else:
+        write_price_snapshots(price_output_path, all_snapshots)
     print(f"Saved {len(all_products)} products to {output_path}")
     print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
     if rate_limit_hit:
