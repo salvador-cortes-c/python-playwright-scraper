@@ -50,14 +50,19 @@ def write_products(output_path: Path, products: list[Product]) -> None:
 
 
 @dataclass
-class Product:
-    name: str
+class ProductPriceSnapshot:
     price: str
     unit_price: str
-    packaging_format: str
-    image: str
     source_url: str
     scraped_at: str
+
+
+@dataclass
+class Product:
+    name: str
+    packaging_format: str
+    image: str
+    prices: list[ProductPriceSnapshot]
 
 
 @dataclass
@@ -318,12 +323,16 @@ async def scrape_products(
         products.append(
             Product(
                 name=name,
-                price=price,
-                unit_price=unit_price,
                 packaging_format=packaging_format,
                 image=image,
-                source_url=url,
-                scraped_at=datetime.now(timezone.utc).isoformat(),
+                prices=[
+                    ProductPriceSnapshot(
+                        price=price,
+                        unit_price=unit_price,
+                        source_url=url,
+                        scraped_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                ],
             )
         )
 
@@ -606,15 +615,22 @@ async def main() -> None:
         await browser.close()
 
     if args.dedupe:
-        unique_products: list[Product] = []
-        seen: set[tuple[str, str]] = set()
+        merged: dict[tuple[str, str], Product] = {}
+        merged_order: list[tuple[str, str]] = []
+
         for product in all_products:
-            key = (product.name.strip().lower(), product.unit_price.strip().lower())
-            if key in seen:
+            key = (product.name.strip().lower(), product.packaging_format.strip().lower())
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = product
+                merged_order.append(key)
                 continue
-            seen.add(key)
-            unique_products.append(product)
-        all_products = unique_products
+
+            if (not existing.image) and product.image:
+                existing.image = product.image
+            existing.prices.extend(product.prices)
+
+        all_products = [merged[key] for key in merged_order]
 
     if args.category_output:
         category_output_path = Path(args.category_output)
