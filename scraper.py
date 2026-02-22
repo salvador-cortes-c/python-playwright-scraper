@@ -63,10 +63,25 @@ def _product_key(name: str, packaging_format: str) -> str:
 @dataclass
 class ProductPriceSnapshot:
     product_key: str
+    supermarket_name: str
     price: str
     unit_price: str
     source_url: str
     scraped_at: str
+
+
+async def _get_supermarket_name(page) -> str:
+    try:
+        locator = page.locator('[data-testid="choose-store"]').first
+        if await locator.count() == 0:
+            return ""
+        text = (await locator.inner_text(timeout=2000)).strip()
+        normalized = " ".join(text.split())
+        if normalized.lower() in {"choose store", "choose a store", "select store", "select a store"}:
+            return ""
+        return normalized
+    except Exception:
+        return ""
 
 
 @dataclass
@@ -313,6 +328,8 @@ async def scrape_products(
     if wait_for_selector:
         await page.wait_for_selector(wait_for_selector)
 
+    supermarket_name = await _get_supermarket_name(page)
+
     cards = page.locator(product_selector)
     count = await cards.count()
 
@@ -356,6 +373,7 @@ async def scrape_products(
         snapshots.append(
             ProductPriceSnapshot(
                 product_key=product_key,
+                supermarket_name=supermarket_name,
                 price=price,
                 unit_price=unit_price,
                 source_url=url,
