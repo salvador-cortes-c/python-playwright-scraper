@@ -178,6 +178,75 @@ def _extract_packaging_format(unit_price: str) -> str:
     return ""
 
 
+async def choose_store(
+    page,
+    start_url: str,
+    headless: bool,
+    manual_wait_seconds: int,
+    ribbon_button_selector: str,
+    change_store_link_selector: str,
+    store_bar_selector: str,
+    store_name: str | None,
+    store_index: int,
+) -> str:
+    response = await page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
+    title = (await page.title()).strip().lower()
+    body_preview = (await page.locator("body").inner_text())[:1000].lower()
+    challenge_detected = _is_bot_challenge(
+        response.status if response else None,
+        title,
+        body_preview,
+    )
+    rate_limited = _is_rate_limited(
+        response.status if response else None,
+        title,
+        body_preview,
+    )
+
+    if rate_limited:
+        raise RateLimitError("Cloudflare rate limit detected while choosing store (Error 1015/429).")
+
+    if challenge_detected and manual_wait_seconds > 0:
+        print(
+            f"Bot challenge detected. Waiting {manual_wait_seconds}s for manual verification in browser..."
+        )
+        await page.wait_for_timeout(manual_wait_seconds * 1000)
+
+    if challenge_detected and headless:
+        raise RuntimeError(
+            "Target page returned a bot challenge (Cloudflare). "
+            "Re-run with --headed and --manual-wait-seconds 60, then complete verification manually."
+        )
+
+    await page.click(ribbon_button_selector, timeout=30000)
+    await page.click(change_store_link_selector, timeout=30000)
+    await page.wait_for_load_state("domcontentloaded")
+
+    await page.click(store_bar_selector, timeout=30000)
+    await page.wait_for_timeout(300)
+
+    if store_name:
+        await page.get_by_text(store_name, exact=True).click(timeout=30000)
+    else:
+        options = page.locator("[role='option']")
+        option_count = await options.count()
+        if option_count <= 0:
+            raise RuntimeError(
+                "Could not find any store options after opening the store list. "
+                "Provide --store-name or update the selectors."
+            )
+        index = max(0, min(int(store_index), option_count - 1))
+        await options.nth(index).click(timeout=30000)
+
+    await page.wait_for_timeout(1000)
+    selected = await _get_supermarket_name(page)
+    if selected:
+        print(f"Selected store: {selected}")
+    else:
+        print("Selected store (name not detected).")
+    return selected
+
+
 def _with_page_number(url: str, page_number: int) -> str:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
@@ -488,6 +557,37 @@ async def main() -> None:
         help="Maximum number of resolved URLs (pages) to scrape. Useful for small test runs.",
     )
     parser.add_argument(
+        "--choose-store",
+        action="store_true",
+        help="Choose a store before scraping (affects prices/availability).",
+    )
+    parser.add_argument(
+        "--store-name",
+        default=None,
+        help="Exact store name to click after opening the store list (optional).",
+    )
+    parser.add_argument(
+        "--store-index",
+        type=int,
+        default=0,
+        help="If --store-name is not set, click the Nth option (0-based) from the store list.",
+    )
+    parser.add_argument(
+        "--store-ribbon-button-selector",
+        default="#ribbon > div > div._1dmgezfn9._1dmgezf4i._1dmgezf9.svd0ke7 > button",
+        help="CSS selector for the ribbon store button.",
+    )
+    parser.add_argument(
+        "--store-change-link-selector",
+        default="#ribbon > div > div._1dmgezfn9._1dmgezf4i._1dmgezf9.svd0ke7 > div._1g0swly0._74qpuq0 > div > div > div._1dmgezfmi._1dmgezf9._1dmgezf19 > a:nth-child(2)",
+        help="CSS selector for the 'Change store' link.",
+    )
+    parser.add_argument(
+        "--store-bar-selector",
+        default="#_r_8_",
+        help="CSS selector for the store selection bar on the store page.",
+    )
+    parser.add_argument(
         "--crawl-category-pages",
         action="store_true",
         help="For category URLs with ?pg= pagination, discover all pages and scrape the full category",
@@ -594,6 +694,19 @@ async def main() -> None:
             storage_state=str(storage_state_path) if storage_state_path.exists() else None
         )
         page = await context.new_page()
+
+        if args.choose_store:
+            await choose_store(
+                page=page,
+                start_url=args.url[0],
+                headless=not args.headed,
+                manual_wait_seconds=max(0, args.manual_wait_seconds),
+                ribbon_button_selector=args.store_ribbon_button_selector,
+                change_store_link_selector=args.store_change_link_selector,
+                store_bar_selector=args.store_bar_selector,
+                store_name=args.store_name,
+                store_index=args.store_index,
+            )
 
         resolved_urls: list[str] = []
         seen_urls: set[str] = set()
