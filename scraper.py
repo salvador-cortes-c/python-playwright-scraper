@@ -54,6 +54,7 @@ class Product:
     name: str
     price: str
     unit_price: str
+    packaging_format: str
     image: str
     source_url: str
     scraped_at: str
@@ -83,6 +84,21 @@ def _is_rate_limited(response_status: int | None, title: str, body_preview: str)
         or "error 1015" in body_preview
         or "you are being rate limited" in body_preview
     )
+
+
+def _extract_packaging_format(unit_price: str) -> str:
+    value = (unit_price or "").strip()
+    if not value:
+        return ""
+
+    if "/" in value:
+        return value.split("/", 1)[1].strip()
+
+    lower = value.lower()
+    if "per " in lower:
+        return value[lower.rfind("per ") + 4 :].strip()
+
+    return ""
 
 
 def _with_page_number(url: str, page_number: int) -> str:
@@ -286,6 +302,7 @@ async def scrape_products(
         price_dollars = (await card.locator(price_selector).first.inner_text()).strip() if await card.locator(price_selector).count() else ""
         price_cents = (await card.locator(price_cents_selector).first.inner_text()).strip() if await card.locator(price_cents_selector).count() else ""
         unit_price = (await card.locator(unit_price_selector).first.inner_text()).strip() if await card.locator(unit_price_selector).count() else ""
+        packaging_format = _extract_packaging_format(unit_price)
         image_raw = await card.locator(image_selector).first.get_attribute("src") if await card.locator(image_selector).count() else ""
         image = urljoin(url, image_raw or "")
 
@@ -303,6 +320,7 @@ async def scrape_products(
                 name=name,
                 price=price,
                 unit_price=unit_price,
+                packaging_format=packaging_format,
                 image=image,
                 source_url=url,
                 scraped_at=datetime.now(timezone.utc).isoformat(),
