@@ -146,6 +146,35 @@ Use `--query` to keep only matching products:
 ./.venv/bin/python scraper.py --url "https://example.com" --query "milk"
 ```
 
+## Scrape specific stores by name
+
+If you want to scrape a specific set of stores (instead of discovering all stores), pass a list of store names:
+
+```bash
+./.venv/bin/python scraper.py \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --max-pages 10 \
+  --store-names "New World Rototuna, New World Te Rapa" \
+  --limit 100 \
+  --headed \
+  --manual-wait-seconds 60
+```
+
+You can also repeat `--store-names`:
+
+```bash
+./.venv/bin/python scraper.py \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --max-pages 10 \
+  --store-names "New World Rototuna" \
+  --store-names "New World Te Rapa" \
+  --limit 100 \
+  --headed \
+  --manual-wait-seconds 60
+```
+
 ## Output
 
 The script writes JSON to the file provided in `--output` (default: `products.json`).

@@ -711,6 +711,16 @@ async def main() -> None:
         help="Exact store name to click after opening the store list (optional).",
     )
     parser.add_argument(
+        "--store-names",
+        action="append",
+        default=None,
+        help=(
+            "Scrape only the specified store name(s). May be repeated. "
+            "You can also pass a comma-separated list in one argument. "
+            "Example: --store-names 'New World Rototuna, New World Te Rapa'"
+        ),
+    )
+    parser.add_argument(
         "--store-index",
         type=int,
         default=0,
@@ -828,6 +838,18 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    store_names_to_scrape: list[str] = []
+    if args.store_names:
+        for entry in args.store_names:
+            if not entry:
+                continue
+            parts = [p.strip() for p in str(entry).split(",")]
+            store_names_to_scrape.extend([p for p in parts if p])
+
+    # Validate store selection flags
+    if store_names_to_scrape and args.scrape_all_stores:
+        raise SystemExit("Do not combine --store-names with --scrape-all-stores. Use one or the other.")
+
     if args.headless_only:
         args.headed = False
 
@@ -880,11 +902,17 @@ async def main() -> None:
             # In this mode, we don't want resume to skip URLs for subsequent stores.
             args.resume = False
 
+        elif store_names_to_scrape:
+            # Scrape only the user-specified store names.
+            store_indices = None
+            stores = store_names_to_scrape
+            args.resume = False
+
         else:
             store_indices = None
             stores = []
 
-        if args.choose_store and not args.scrape_all_stores:
+        if args.choose_store and (not args.scrape_all_stores) and (not store_names_to_scrape):
             await choose_store(
                 page=page,
                 start_url=args.url[0],
@@ -1086,6 +1114,23 @@ async def main() -> None:
                     await scrape_urls_for_current_store(resolved_urls)
                     if rate_limit_hit:
                         break
+        elif store_names_to_scrape:
+            for store in stores:
+                print(f"\n=== Store: {store} ===")
+                await choose_store(
+                    page=page,
+                    start_url=args.url[0],
+                    headless=not args.headed,
+                    manual_wait_seconds=max(0, args.manual_wait_seconds),
+                    ribbon_button_selector=args.store_ribbon_button_selector,
+                    change_store_link_selector=args.store_change_link_selector,
+                    store_bar_selector=args.store_bar_selector,
+                    store_name=store,
+                    store_index=args.store_index,
+                )
+                await scrape_urls_for_current_store(resolved_urls)
+                if rate_limit_hit:
+                    break
         else:
             await scrape_urls_for_current_store(resolved_urls)
 
