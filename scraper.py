@@ -118,6 +118,8 @@ class ProductPriceSnapshot:
     promo_unit_price: str = ""
     source_url: str
     scraped_at: str
+    promo_price: str = ""
+    promo_unit_price: str = ""
 
 
 def _replace_last_nth_child(selector: str, nth: int) -> str:
