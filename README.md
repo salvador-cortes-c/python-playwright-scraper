@@ -168,8 +168,8 @@ You can also repeat `--store-names`:
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
   --max-pages 10 \
-  --store-names "New World Rototuna" \
-  --store-names "New World Te Rapa" \
+  --store-names "New World Karori" \
+  --store-names "New World Island Bay" \
   --limit 100 \
   --headed \
   --manual-wait-seconds 60
