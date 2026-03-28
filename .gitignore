@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+run_scraper.sh
+start_display.sh
 
 # Playwright / scraper outputs
 products.json
