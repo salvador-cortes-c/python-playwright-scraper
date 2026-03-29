@@ -1,0 +1,142 @@
+name: Daily Product Scrape
+
+on:
+  schedule:
+    # Run at 2 AM UTC daily (adjust for your timezone)
+    - cron: '0 2 * * *'
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to scrape (optional)'
+        required: false
+        default: 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1'
+      limit:
+        description: 'Max products to scrape'
+        required: false
+        default: '20'
+      store_name:
+        description: 'Store name (optional)'
+        required: false
+
+# Set longer timeout for scraping jobs (default is 6 hours)
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+    
+    steps:
+      # Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      # Install system dependencies for Firefox and X11
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            x11vnc \
+            websockify \
+            novnc \
+            libgtk-3-0 \
+            libdbus-glib-1-2 \
+            libxt6 \
+            libx11-xcb1 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libasound2
+      
+      # Install Python dependencies
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Install playwright-stealth which is imported but not in requirements.txt
+          pip install playwright-stealth
+      
+      # Install Playwright browsers
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install firefox
+          python -m playwright install-deps firefox
+      
+      # Set up virtual display for headed mode
+      - name: Set up virtual display
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x800x24 &
+          sleep 2
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      
+      # Run the scraper
+      - name: Run scraper
+        env:
+          DISPLAY: :99
+        run: |
+          # Use input parameters if provided, otherwise use defaults
+          SCRAPER_ARGS="--url '${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}'"
+          SCRAPER_ARGS="$SCRAPER_ARGS --limit ${{ github.event.inputs.limit || '20' }}"
+          SCRAPER_ARGS="$SCRAPER_ARGS --headless-only"
+          SCRAPER_ARGS="$SCRAPER_ARGS --output products.json"
+          SCRAPER_ARGS="$SCRAPER_ARGS --price-output price_snapshots.json"
+          
+          # Add store name if provided
+          {{if github.event.inputs.store_name}}SCRAPER_ARGS="$SCRAPER_ARGS --store-name '${{ github.event.inputs.store_name }}'"{{endif}}
+          
+          echo "Running scraper with args: $SCRAPER_ARGS"
+          python scraper.py $SCRAPER_ARGS
+      
+      # Upload scraped data as artifact
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-results
+          path: |
+            products.json
+            price_snapshots.json
+            scrape_progress.json
+            storage_state.json
+          retention-days: 7
+      
+      # Optional: Create a summary of what was scraped
+      - name: Create scrape summary
+        if: always()
+        run: |
+          echo "## Scraping Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "products.json" ]; then
+            PRODUCT_COUNT=$(jq '. | length' products.json 2>/dev/null || echo "0")
+            echo "✅ **Products scraped:** $PRODUCT_COUNT" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Products file not created**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f "price_snapshots.json" ]; then
+            SNAPSHOT_COUNT=$(jq '. | length' price_snapshots.json 2>/dev/null || echo "0")
+            echo "📊 **Price snapshots:** $SNAPSHOT_COUNT" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📊 **Price snapshots file not created**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow run:** $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "**Manual run with URL:** ${{ github.event.inputs.url || 'default' }}" >> $GITHUB_STEP_SUMMARY
+          fi
