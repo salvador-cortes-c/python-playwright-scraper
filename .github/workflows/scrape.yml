@@ -42,7 +42,10 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          # Try to install libasound2, fall back to libasound2t64 if not available
+          # Install audio library (try both versions)
+          sudo apt-get install -y libasound2t64 libasound2 || true
+          
+          # Install other dependencies
           sudo apt-get install -y \
             xvfb \
             x11vnc \
@@ -59,8 +62,10 @@ jobs:
             libxrandr2 \
             libgbm1 \
             libpango-1.0-0 \
-            libcairo2 \
-            libasound2t64 || sudo apt-get install -y libasound2
+            libcairo2
+          
+          # Install Playwright's own dependencies
+          python -m playwright install-deps firefox
       # Install Python dependencies
       - name: Install Python dependencies
         run: |
@@ -96,7 +101,9 @@ jobs:
           SCRAPER_ARGS="$SCRAPER_ARGS --price-output price_snapshots.json"
           
           # Add store name if provided
-          {{if github.event.inputs.store_name}}SCRAPER_ARGS="$SCRAPER_ARGS --store-name '${{ github.event.inputs.store_name }}'"{{endif}}
+          if [ -n "${{ github.event.inputs.store_name }}" ]; then
+            SCRAPER_ARGS="$SCRAPER_ARGS --store-name '${{ github.event.inputs.store_name }}'"
+          fi
           
           echo "Running scraper with args: $SCRAPER_ARGS"
           python scraper.py $SCRAPER_ARGS
