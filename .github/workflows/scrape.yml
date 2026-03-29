@@ -101,9 +101,11 @@ jobs:
           ARGS=(
             "--url" "$URL"
             "--limit" "$LIMIT"
-            "--headless-only"
+            "--headed"
+            "--manual-wait-seconds" "120"
             "--output" "products.json"
             "--price-output" "price_snapshots.json"
+            "--storage-state" "storage_state.json"
           )
           
           # Add store name if provided
