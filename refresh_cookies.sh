@@ -21,8 +21,15 @@ source .venv/bin/activate
 # Install/update dependencies
 echo "📦 Installing/updating dependencies..."
 pip install --upgrade pip
-pip install -r requirements.txt
-pip install playwright-stealth
+
+# Use compatibility checker for Playwright
+echo "🔧 Checking Playwright compatibility..."
+python check_and_fix_playwright.py
+
+# Install playwright-stealth
+pip install playwright-stealth || {
+    echo "⚠️  Could not install playwright-stealth, continuing anyway..."
+}
 
 # Install Playwright browsers if needed
 echo "🌐 Checking Playwright installation..."
