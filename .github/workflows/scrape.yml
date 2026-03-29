@@ -93,19 +93,26 @@ jobs:
           DISPLAY: :99
         run: |
           # Use input parameters if provided, otherwise use defaults
-          SCRAPER_ARGS="--url '${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}'"
-          SCRAPER_ARGS="$SCRAPER_ARGS --limit ${{ github.event.inputs.limit || '20' }}"
-          SCRAPER_ARGS="$SCRAPER_ARGS --headless-only"
-          SCRAPER_ARGS="$SCRAPER_ARGS --output products.json"
-          SCRAPER_ARGS="$SCRAPER_ARGS --price-output price_snapshots.json"
+          URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
+          LIMIT="${{ github.event.inputs.limit || '20' }}"
+          STORE_NAME="${{ github.event.inputs.store_name }}"
+          
+          # Build scraper arguments array
+          ARGS=(
+            "--url" "$URL"
+            "--limit" "$LIMIT"
+            "--headless-only"
+            "--output" "products.json"
+            "--price-output" "price_snapshots.json"
+          )
           
           # Add store name if provided
-          if [ -n "${{ github.event.inputs.store_name }}" ]; then
-            SCRAPER_ARGS="$SCRAPER_ARGS --store-name '${{ github.event.inputs.store_name }}'"
+          if [ -n "$STORE_NAME" ]; then
+            ARGS+=("--store-name" "$STORE_NAME")
           fi
           
-          echo "Running scraper with args: $SCRAPER_ARGS"
-          python scraper.py $SCRAPER_ARGS
+          echo "Running scraper with args: ${ARGS[@]}"
+          python scraper.py "${ARGS[@]}"
       
       # Upload scraped data as artifact
       - name: Upload scraped data
