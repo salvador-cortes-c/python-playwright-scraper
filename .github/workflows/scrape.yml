@@ -101,11 +101,12 @@ jobs:
           ARGS=(
             "--url" "$URL"
             "--limit" "$LIMIT"
-            "--headed"
-            "--manual-wait-seconds" "120"
+            "--headless-only"  # Use headless with saved cookies
             "--output" "products.json"
             "--price-output" "price_snapshots.json"
             "--storage-state" "storage_state.json"
+            "--append-snapshots"  # Keep price history
+            "--delay-seconds" "3"  # Be polite to avoid rate limiting
           )
           
           # Add store name if provided
