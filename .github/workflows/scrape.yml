@@ -42,6 +42,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
+          # Try to install libasound2, fall back to libasound2t64 if not available
           sudo apt-get install -y \
             xvfb \
             x11vnc \
@@ -59,8 +60,7 @@ jobs:
             libgbm1 \
             libpango-1.0-0 \
             libcairo2 \
-            libasound2
-      
+            libasound2t64 || sudo apt-get install -y libasound2
       # Install Python dependencies
       - name: Install Python dependencies
         run: |
