@@ -63,9 +63,6 @@ jobs:
             libgbm1 \
             libpango-1.0-0 \
             libcairo2
-          
-          # Install Playwright's own dependencies
-          python -m playwright install-deps firefox
       # Install Python dependencies
       - name: Install Python dependencies
         run: |
@@ -74,11 +71,13 @@ jobs:
           # Install playwright-stealth which is imported but not in requirements.txt
           pip install playwright-stealth
       
-      # Install Playwright browsers
-      - name: Install Playwright browsers
+      # Install Playwright system dependencies and browsers
+      - name: Install Playwright system dependencies and browsers
         run: |
-          python -m playwright install firefox
+          # Install system dependencies for browsers
           python -m playwright install-deps firefox
+          # Install the browsers
+          python -m playwright install firefox
       
       # Set up virtual display for headed mode
       - name: Set up virtual display

@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from playwright.async_api import async_playwright
+from playwright_stealth import Stealth
 
 
 class RateLimitError(RuntimeError):
@@ -114,8 +115,6 @@ class ProductPriceSnapshot:
     supermarket_name: str
     price: str
     unit_price: str
-    promo_price: str = ""
-    promo_unit_price: str = ""
     source_url: str
     scraped_at: str
     promo_price: str = ""
@@ -891,7 +890,7 @@ async def main() -> None:
         "--headless-only",
         action="store_true",
         help=(
-            "Force headless mode (never show a Chromium window). "
+            "Force headless mode (never show a Firefox window). "
             "If Cloudflare blocks headless, run once without --headless-only + with --headed to complete verification, "
             "then rerun headless using the saved storage_state.json."
         ),
@@ -978,17 +977,18 @@ async def main() -> None:
     async with async_playwright() as playwright:
         headless = not args.headed
         try:
-            browser = await playwright.chromium.launch(headless=headless)
+            browser = await playwright.firefox.launch(headless=headless)
         except Exception as exc:
             raise RuntimeError(
                 "Playwright browser binaries are not installed for this scraper's venv. "
-                "Run: ./.venv/bin/python -m playwright install chromium"
+                "Run: ./.venv/bin/python -m playwright install firefox"
             ) from exc
         storage_state_path = Path(args.storage_state)
         context = await browser.new_context(
             storage_state=str(storage_state_path) if storage_state_path.exists() else None
         )
         page = await context.new_page()
+        await Stealth().apply_stealth_async(page)
 
         if args.scrape_all_stores:
             # For small runs (like --max-stores 5), selecting stores by index is far more reliable than
