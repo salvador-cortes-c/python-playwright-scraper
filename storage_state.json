@@ -1,1 +1,411 @@
-{"cookies": [{"name": "_gcl_au", "value": "1.1.1346977388.1774774241", "domain": ".newworld.co.nz", "path": "/", "expires": 1782550240, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "BVBRANDID", "value": "9610eb1e-7d73-4379-bb5e-59a2f935b616", "domain": ".newworld.co.nz", "path": "/", "expires": 1806310241, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_ga", "value": "GA1.1.815802556.1774774242", "domain": ".newworld.co.nz", "path": "/", "expires": 1809334241.825, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "Region", "value": "NI", "domain": "www.newworld.co.nz", "path": "/", "expires": 1806310242, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "FPLC", "value": "QazIHr0LxXEPa4OpnIuPr5sqU0PT%2FpbETEz%2FAr8lFXe%2BUyWNSmtwEu%2FEzfhl0e9h9u6G%2ByMWg7jWXyE40kr0SAoi%2BCVz30Jcra895VloFqABaQtzxnh9yF9cNvBOhg%3D%3D", "domain": ".newworld.co.nz", "path": "/", "expires": 1774846242.394, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_dyid_server", "value": "8660422334316341215", "domain": "www.newworld.co.nz", "path": "/", "expires": 1806332946.908, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_dyjsession", "value": "3hge2gqd2zfesrj7myrwyfmpcihrieia", "domain": "www.newworld.co.nz", "path": "/", "expires": 1774777821.039, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_cfuvid", "value": "MqoBC8RZrSJp3Q4bl5JICoVncJGJZ2iBUX6_pndC9Us-1774776019.3788877-1.0.1.1-KYKTW5iGTBdS5ZFiIucujbufioTfzY7kQBK1EBlf0N0", "domain": ".newworld.co.nz", "path": "/", "expires": -1, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "_dy_soct", "value": "1774776025!!", "domain": ".newworld.co.nz", "path": "/", "expires": 1806312025, "httpOnly": false, "secure": true, "sameSite": "Lax"}, {"name": "brands_store_reset", "value": "", "domain": "www.newworld.co.nz", "path": "/", "expires": 1806312033, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_dyid", "value": "8660422334316341215", "domain": ".newworld.co.nz", "path": "/", "expires": 1777368036, "httpOnly": false, "secure": true, "sameSite": "Lax"}, {"name": "ABTastySession", "value": "mrasn=&lp=https%253A%252F%252Fwww.newworld.co.nz%252F", "domain": ".newworld.co.nz", "path": "/", "expires": 1774777838, "httpOnly": false, "secure": false, "sameSite": "Lax"}, {"name": "ABTasty", "value": "uid=jpe8srq8bc0735ms&fst=1774774240177&pst=-1&cst=1774774240177&ns=1&pvt=3&pvis=3&th=1426170.1772246.2.2.1.1.1774774240256.1774775240863.0.1", "domain": ".newworld.co.nz", "path": "/", "expires": 1808988640, "httpOnly": false, "secure": false, "sameSite": "Lax"}, {"name": "fs-user-token", "value": "eyJhbGciOiJSUzI1NiJ9.eyJqdGkiOiI4ZWMwZjBiOS02MDQxLTRiN2EtODJlYS1iMzQ5OTNiZTlkZjkiLCJpc3MiOiJvbmxpbmUtY3VzdG9tZXIiLCJzZXNzaW9uSWQiOiI4ZTFkNTU2MC00ZmEwLTQ3MDMtOWQ4NS04M2UwOTI2Mjg5NmYiLCJiYW5uZXIiOiJNTlciLCJmaXJzdE5hbWUiOiJhbm9ueW1vdXMiLCJlbWFpbCI6ImFub255bW91cyIsInJvbGVzIjpbIkFOT05ZTU9VUyJdLCJleHAiOjE3NzQ3Nzc4NDB9.olVQdMdej0BdCVceU6lJnRyRlWcWsEiW1IuxCkA6eDS9BtygTkDrOzz6BF2nAkAbqi9D4BXAYP07LtI_CFesfDgXN8r_kY3hIfMwIUClxgGCEjSU81JWjudMC2J_6-hYBQXObW89Uv3qzlKd8fjpxq24JJBfPIcpowYjGh_Kj67hi3G6TA8-_6n72kAn5-BUfRA0LIW9PtBbe3eqzv3ShPMiIsRQUrUCaqokLkmJkWwM6FWUUh6MsLjF_Ac0bOeFw0ANOa9TOvKZPwIY6GYFLJMIQRx6z9sNXXJcA_ROYqhEWbsIkY4b7bR3DvDt9PdoMLVGTbWZJJsVKll3MBB97g", "domain": "www.newworld.co.nz", "path": "/", "expires": 1774777840.552, "httpOnly": true, "secure": true, "sameSite": "Strict"}, {"name": "refresh_token", "value": "188bda7f8238306f22602c601cd61a2f%3A6a7f2cacf46f29b0c2cd289506b84d2ff11b6b2d36d33881d43dba2012248f4155dbb40a67758d97d3b294b8c59843bae1d2855bc5d9273e8400deb126b63bc33f7996ba97cee88a8c0414ffe3cef8e862e9e98bd1206a3c9fdc67eb6ef629f34965e45430c876091a0fab363423ae916bcf5e2f1b1a1b01a88c054ddae1dc4286355086546f4e10241f6b3a63d1f0b958a0e3cd1a019fbdba4889e9bdcab460207efbf9da6fc75f97e5e56ed1cb6401", "domain": "www.newworld.co.nz", "path": "/", "expires": 1775985641.576, "httpOnly": true, "secure": true, "sameSite": "Strict"}, {"name": "_hjSessionUser_877117", "value": "eyJpZCI6IjBkNWE5YjJiLTY2YWItNTc5ZC04ODZkLTFhMzdlYmRjOGY1NSIsImNyZWF0ZWQiOjE3NzQ3NzQyNDE5NDEsImV4aXN0aW5nIjp0cnVlfQ==", "domain": ".newworld.co.nz", "path": "/", "expires": 1806312041, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_hjSession_877117", "value": "eyJpZCI6ImM5YjI5MjJmLTU3NTAtNGYyMC04MTJlLWYxYzUxZjg4MjRiNiIsImMiOjE3NzQ3NzYwNDExMzMsInMiOjEsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjowLCJzcCI6MH0=", "domain": ".newworld.co.nz", "path": "/", "expires": 1774777841, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "BVBRANDSID", "value": "2abc7f0d-94e1-4f7e-bb84-133021618599", "domain": ".newworld.co.nz", "path": "/", "expires": 1774777841, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "ORA_FPC", "value": "id=94d71974-5a02-4e1d-9535-661c4e87cae4", "domain": "www.newworld.co.nz", "path": "/", "expires": 1809336041.359, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "cf_clearance", "value": "wzeHKK7DPhh8gxW3UjqgbNZVJ5ZgcI33ZQOEVoJaCkE-1774776042-1.2.1.1-40VFUZA3xAP4pUM8CCLofv_wc8GxI7ENh5umUcoMPvlEvOwlXNMOnFyKKkK2hMoKz1lHUGh1dRpecqZ.0DsO1U7jVYy9d373Fv9QTSvFKHwswzO1KnF3CVx4KAn2iFoo1PRqwMQ3MB1AptwNVZH5WhUNqge5BmaYKjmwUFcEwJD6MYVR8rKTIeOCy4K1nW5Q3GRplebDSQaYd8ISzCjx_EbKBOIqyTJNpO8mCo.1FgA", "domain": ".newworld.co.nz", "path": "/", "expires": 1806312042.608, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "__cf_bm", "value": "zhXlS2gxNhcnmns.d4del_qFUew48BYOIzJ9UHQ2bQs-1774776042.2605345-1.0.1.1-w3_KdqmDbVTZU0eGunT2LDlu1af374Nx01BdVFy24YE_8HEKjFM7Or0UGci8I.f.EA5iNxNW9lQ5yKf0W_WFfw4nMc7gptTulz.A.kciQL90yHTtf6dUeL_ALwp2DHo8qY.0XlK1ekm0WZygDCueUQ", "domain": ".newworld.co.nz", "path": "/", "expires": 1774777842.825, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "ki_t", "value": "1774774241667%3B1774774241667%3B1774776045372%3B1%3B3", "domain": "www.newworld.co.nz", "path": "/", "expires": 1809336045.372, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "ki_r", "value": "", "domain": "www.newworld.co.nz", "path": "/", "expires": 1809336045.374, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "AWSALBTG", "value": "hJCCfPVKfR6RqKOPYRJvx9Om1k5mFVVfYdfAte6kyBCdtz8PRF7Eg+3gLtx3RKLc3i0HXjAPBeMj9Jq36Jv35qUNb+Whc24aRVcz8cVF9FDOA4086MMrPl99643ezrVHpRb2PRy5OmuX9HOh8XEM0mwuAqQi4+bH0ls5RaBqAdxK", "domain": "api-prod.newworld.co.nz", "path": "/", "expires": 1775380847.625, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "AWSALBTGCORS", "value": "hJCCfPVKfR6RqKOPYRJvx9Om1k5mFVVfYdfAte6kyBCdtz8PRF7Eg+3gLtx3RKLc3i0HXjAPBeMj9Jq36Jv35qUNb+Whc24aRVcz8cVF9FDOA4086MMrPl99643ezrVHpRb2PRy5OmuX9HOh8XEM0mwuAqQi4+bH0ls5RaBqAdxK", "domain": "api-prod.newworld.co.nz", "path": "/", "expires": 1775380847.631, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "WTPERSIST", "value": "", "domain": ".newworld.co.nz", "path": "/", "expires": 1806312048, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "eCom_STORE_ID", "value": "38b074c4-0e5a-4bd5-b743-d30f28d94982", "domain": "www.newworld.co.nz", "path": "/", "expires": 1806312049, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "STORE_ID_V2", "value": "38b074c4-0e5a-4bd5-b743-d30f28d94982|False", "domain": "www.newworld.co.nz", "path": "/", "expires": 1806312049, "httpOnly": false, "secure": true, "sameSite": "None"}, {"name": "_fbp", "value": "fb.2.1774776040610.19188126089285033", "domain": ".newworld.co.nz", "path": "/", "expires": 1782552051.055, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "_ga_6M61DH60LD", "value": "GS2.1.s1774774241$o1$g1$t1774776051$j50$l0$h256573547", "domain": ".newworld.co.nz", "path": "/", "expires": 1809336051.33, "httpOnly": false, "secure": false, "sameSite": "None"}, {"name": "FPID", "value": "FPID2.3.fLkLk2herlYvo3FWqsS0Y%2FR09ZmhEuJhbUEYFSGcZ%2BA%3D.1774774242", "domain": ".newworld.co.nz", "path": "/", "expires": 1809336051.61, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "_dyjsession", "value": "3hge2gqd2zfesrj7myrwyfmpcihrieia", "domain": ".newworld.co.nz", "path": "/", "expires": 1774777852.057, "httpOnly": false, "secure": true, "sameSite": "Lax"}, {"name": "IDE", "value": "AHWqTUm0L6x9qm1bO3J8Dp07J6VJAqzzGDaaSsWkisf47DM9DWDmjnNHhxT47sqg", "domain": ".doubleclick.net", "path": "/", "expires": 1809334244.365, "httpOnly": true, "secure": true, "sameSite": "None"}, {"name": "cee", "value": "4ecIE6H9bOmjaJT3adlqiQFWb9ARBgHwspts152yZfU%3D.%7B%7D", "domain": ".capig.stape.id", "path": "/events/e0a1fe876a10a438afae6a8d38cd874ddc6da8650b017061c335fc5a19d536a9", "expires": 1782552043.692, "httpOnly": true, "secure": true, "sameSite": "None"}], "origins": [{"origin": "https://www.newworld.co.nz", "localStorage": [{"name": "_dyaud_page", "value": "*2026-03-29*0"}, {"name": "fs", "value": "{\"storeTimeslots\":{\"slots\":[],\"expiredTimeslotNotificationDismissed\":false,\"willExpireTimeslotNotificationDismissed\":false,\"expiredSoftTimeslotNotificationDismissed\":false,\"willExpireTimeslotNotificationClosedTimestamp\":null}}"}, {"name": "_dy_soct", "value": "1774776025!!"}, {"name": "_gcl_ls", "value": "{\"schema\":\"gcl\",\"version\":1,\"gcl_ctr\":{\"value\":{\"value\":0,\"timeouts\":0,\"errors\":0,\"creationTimeMs\":1774774240645},\"expires\":1782550240645},\"gtg_load_status\":{\"status\":2,\"expires\":1774860641337}}"}, {"name": "_dy_tsrc", "value": "Direct"}, {"name": "_dy_device", "value": "{\"brand\":\"Other\",\"type\":\"desktop\",\"os\":\"linux\",\"browser\":\"firefox\"}"}, {"name": "FLAGSMITH_FLAGS", "value": "{\"api\":\"https://edge.api.flagsmith.com/api/v1/\",\"environmentID\":\"ser.FSwdzjYsRbzB8jvcKKXPXS\",\"flags\":{\"test_login_enabled\":{\"id\":93873,\"enabled\":false,\"value\":\"\"},\"feature_flag_url_override\":{\"id\":93993,\"enabled\":false,\"value\":null},\"feature_flag_identity_enabled\":{\"id\":94261,\"enabled\":false,\"value\":\"\"},\"varied_timeslot_pricing\":{\"id\":94875,\"enabled\":true,\"value\":\"2de22d8e-54d4-4575-be10-0d783324ec75\"},\"product_reviews_bazaarvoice\":{\"id\":103544,\"enabled\":true,\"value\":\"{\\n    \\\"regions\\\": [\\\"NI\\\", \\\"SI\\\"],\\n    \\\"categories\\\": [\\n      \\\"Baby Care\\\",\\n      \\\"Baby & Toddler\\\",\\n      \\\"Pet Supplies\\\",\\n      \\\"Cat\\\",\\n      \\\"Dog\\\",\\n      \\\"Birds, Fish & Small Animals\\\",\\n      \\\"Pet Health & Accessories\\\",\\n      \\\"Cheese\\\",\\n      \\\"Cold Drinks\\\",\\n      \\\"Hot Drinks\\\",\\n      \\\"Desserts\\\",\\n      \\\"Baking Supplies & Sugar\\\",\\n      \\\"Biscuits & Crackers\\\",\\n      \\\"Breakfast Cereals\\\",\\n      \\\"Canned & Prepared Foods\\\",\\n      \\\"Condiments & Dressings\\\",\\n      \\\"Confectionery\\\",\\n      \\\"Jams, Honey & Spreads\\\",\\n      \\\"Pasta, Rice & Noodles\\\",\\n      \\\"Salad & Cooking Oils\\\",\\n      \\\"Sauces, Stock & Marinades\\\",\\n      \\\"Snack Foods\\\",\\n      \\\"World Foods\\\",\\n      \\\"Beer\\\",\\n      \\\"Craft Beer\\\",\\n      \\\"Cider\\\",\\n      \\\"Champagne & Sparkling Wine\\\",\\n      \\\"Red Wine\\\",\\n      \\\"White Wine\\\",\\n      \\\"Rose Wine\\\",\\n      \\\"Moscato & Sweet Wine\\\",\\n      \\\"Cask Wine\\\",\\n      \\\"Mini Wine Bottles & Cans\\\",\\n      \\\"Lower Alcohol Drinks\\\",\\n      \\\"Alcohol Free Drinks\\\",\\n      \\\"Seltzers & Other Alcoholic Drinks\\\",\\n      \\\"Bath, Shower & Soap\\\",\\n      \\\"Hair Care\\\",\\n      \\\"Dental & Oral Care\\\",\\n      \\\"Deodorant & Body Sprays\\\",\\n      \\\"Skin Care & Sun Care\\\",\\n      \\\"Shaving & Hair Removal\\\",\\n      \\\"Make Up & Nail Care\\\",\\n      \\\"Period & Continence Care\\\",\\n      \\\"Tissues & Cotton Wool\\\",\\n      \\\"Medical & First Aid\\\",\\n      \\\"Vitamins & Supplements\\\",\\n      \\\"Sports Nutrition & Weight Management\\\",\\n      \\\"Pregnancy & Contraception\\\",\\n      \\\"Cleaning Products\\\",\\n      \\\"Garage & Outdoor\\\",\\n      \\\"Household\\\",\\n      \\\"Laundry\\\",\\n      \\\"Stationery & Entertainment\\\",\\n      \\\"Cleaning & Accessories\\\",\\n      \\\"Toilet Paper, Tissues & Paper Towels\\\",\\n      \\\"Bathroom & Toilet Cleaners\\\",\\n      \\\"Dishwashing\\\",\\n      \\\"Kitchen Cleaners\\\",\\n      \\\"Food Wrap, Storage & Bags\\\",\\n      \\\"Pest & Insect Control\\\",\\n      \\\"Homewares\\\",\\n      \\\"Clothing & Accessories\\\",\\n      \\\"Batteries & Electrical\\\",\\n      \\\"Coffee\\\",\\n      \\\"Tea\\\",\\n      \\\"Hot Chocolate & Milk Drinks\\\",\\n      \\\"Water\\\",\\n      \\\"Soft Drinks & Mixers\\\",\\n      \\\"Juice & Smoothies\\\",\\n      \\\"Sports & Energy Drinks\\\",\\n      \\\"Syrups, Cordials & Powdered Drinks\\\",\\n      \\\"Kombucha & Functional Drinks\\\",\\n      \\\"Chips, Nuts & Snacks\\\",\\n      \\\"Chocolate, Sweets & Chewing Gum\\\",\\n      \\\"Canned Foods & Packets\\\",\\n      \\\"Long Life & Dairy Free Milk\\\",\\n      \\\"Cooking Sauces, Stocks & Marinades\\\",\\n      \\\"Table Sauces, Dressings & Condiments\\\",\\n      \\\"Oil & Vinegar\\\",\\n      \\\"Spices, Seasoning & Coatings\\\",\\n      \\\"Bulk Foods\\\",\\n      \\\"World Foods\\\"\\n    ]\\n  }\"},\"page_test_poc\":{\"id\":105721,\"enabled\":false,\"value\":null},\"page_my_account_my_lists\":{\"id\":108368,\"enabled\":false,\"value\":null},\"page_shop_from_order\":{\"id\":108511,\"enabled\":false,\"value\":null},\"test_flag_1\":{\"id\":110542,\"enabled\":false,\"value\":null},\"te_atatu_kumeu_remote_collection\":{\"id\":131166,\"enabled\":false,\"value\":null},\"content_stack\":{\"id\":135183,\"enabled\":false,\"value\":null},\"quick_comm\":{\"id\":135577,\"enabled\":true,\"value\":\"\"},\"delivery_pass_enabled\":{\"id\":141275,\"enabled\":false,\"value\":\"\"},\"airpoints_v3\":{\"id\":142820,\"enabled\":true,\"value\":null},\"pm_modal_with_unit_pricing_enabled\":{\"id\":146181,\"enabled\":true,\"value\":null},\"bv_communication_preference\":{\"id\":154040,\"enabled\":true,\"value\":null},\"bought_before_search\":{\"id\":163980,\"enabled\":true,\"value\":null},\"purple\":{\"id\":168788,\"enabled\":false,\"value\":0},\"live_chat_v2_enabled\":{\"id\":170166,\"enabled\":false,\"value\":null},\"club_card_menu_enabled\":{\"id\":175051,\"enabled\":false,\"value\":false},\"local_alcohol_policy\":{\"id\":191681,\"enabled\":false,\"value\":null}},\"ts\":null,\"traits\":{},\"evaluationEvent\":null}"}, {"name": "ABTastyData", "value": "{\"VisitedPages\":[{\"url\":\"https://www.newworld.co.nz/\",\"visite\":1,\"time\":1774774240177,\"title\":\"New World | Online Grocery Shopping \u2013 Easy, Convenient, Fresh | New World\"},{\"url\":\"https://www.newworld.co.nz/\",\"visite\":1,\"time\":1774775240486,\"title\":\"New World | Online Grocery Shopping \u2013 Easy, Convenient, Fresh | New World\"},{\"url\":\"https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1\",\"visite\":1,\"time\":1774776038634,\"title\":\"Fruit & Vegetables | New World\"}],\"eai\":{\"collectDone\":true}}"}, {"name": "lastExternalReferrer", "value": "empty"}, {"name": "_dyaud_nchc", "value": "2356145.2863016*11559706@3**2356142@1.2356143@1.2356144@1.2356145@1.2775772@1.2775773@1.2775774@1.2863016@1.2863017@1.2863018@1.2863019@1.2863020@1.2863021@1"}, {"name": "_dyid", "value": "8660422334316341215"}, {"name": "lastExternalReferrerTime", "value": "1774776040566"}, {"name": "_dycst", "value": "dk.l.f.ms.fst."}, {"name": "_dy_csc", "value": "{\"_pv\":6,\"_ses\":1,\"_prev_ses\":\"3hge2gqd2zfesrj7myrwyfmpcihrieia\",\"firstpv\":{\"ts\":1774774238005,\"ses\":1,\"pv\":1},\"lastevent_sync cart\":{\"ts\":1774776051048,\"ses\":1,\"pv\":6}}"}, {"name": "ORA_COOK_STORE", "value": "{\"ORA_FPC\":\"ORA_FPC=id=94d71974-5a02-4e1d-9535-661c4e87cae4; expires=Tue, 28 Mar 2028 20:58:12 GMT; path=/; secure; secure\",\"WTPERSIST\":\"WTPERSIST=;domain=.newworld.co.nz;path=/;expires=Mon, 29 Mar 2027 09:20:48 GMT; secure\"}"}]}]}
+{
+    "cookies": [
+        {
+            "name": "_gcl_au",
+            "value": "1.1.1346977388.1774774241",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1782550240,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "BVBRANDID",
+            "value": "9610eb1e-7d73-4379-bb5e-59a2f935b616",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1806310241,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_ga",
+            "value": "GA1.1.815802556.1774774242",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1809334241.825,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "Region",
+            "value": "NI",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1806310242,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "FPLC",
+            "value": "QazIHr0LxXEPa4OpnIuPr5sqU0PT%2FpbETEz%2FAr8lFXe%2BUyWNSmtwEu%2FEzfhl0e9h9u6G%2ByMWg7jWXyE40kr0SAoi%2BCVz30Jcra895VloFqABaQtzxnh9yF9cNvBOhg%3D%3D",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846242.394,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_cfuvid",
+            "value": "MqoBC8RZrSJp3Q4bl5JICoVncJGJZ2iBUX6_pndC9Us-1774776019.3788877-1.0.1.1-KYKTW5iGTBdS5ZFiIucujbufioTfzY7kQBK1EBlf0N0",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": -1,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_dyid_server",
+            "value": "8660422334316341215",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1806401960.835,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_dyjsession",
+            "value": "tfbpilinw7uepuf4fw03ckcr11xuvu5y",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1774846834.859,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_dy_soct",
+            "value": "1774845038!!",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1806381038,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "brands_store_reset",
+            "value": "",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1806381042,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "fs-user-token",
+            "value": "eyJhbGciOiJSUzI1NiJ9.eyJqdGkiOiI4ZjBlYWY3Ny1kYTQ4LTQ3MmQtYWY1My0wY2RmZGQ2MTdlODkiLCJpc3MiOiJvbmxpbmUtY3VzdG9tZXIiLCJzZXNzaW9uSWQiOiI4ZTFkNTU2MC00ZmEwLTQ3MDMtOWQ4NS04M2UwOTI2Mjg5NmYiLCJiYW5uZXIiOiJNTlciLCJmaXJzdE5hbWUiOiJhbm9ueW1vdXMiLCJlbWFpbCI6ImFub255bW91cyIsInJvbGVzIjpbIkFOT05ZTU9VUyJdLCJleHAiOjE3NzQ4NDY4NDV9.usmG6cU3fwzBqlqm7EbISnSb1s2NI1R70tWNbt2nVu7ixaBd0lYt4md4uyphGOWtIEgY12XcHQkYzfKonmNOHnqHDEa0n_qZ_o4D4S5ttYWPrwM_yuLVxN-KRva2iBUS_tHRCkm8Z8cBEnyacSYxXmfCM1Q3DVOIJXNxBlByGqdntA4fy4mi6b5T6t3GPoSBKT4IGQhEBEdWza503_XFZLtaMtJivjxlMTEcAs_iuACynvj90kKqlKKbSr7TLmyQuxT8uc-tpVPSd7IS9gDJu6xueNk7v8I3YcIYukX7-1tPaK2vzgCkmGSzTFgg_NLZ1W70n98nx97Ot1pSlZfdyg",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1774846845.66,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "Strict"
+        },
+        {
+            "name": "refresh_token",
+            "value": "947f95aaef280c1ce9d0ff4a6ae9c1e1%3A0b3bfd66a69cf1b8bd373b1fe8d755a925400ae445a324d5e1af3820a65919efaced822faf0ea2487ddaaebb4942af3243ca59353c1eb4653c09ce8d89d0ac519632064a68989a8055133f4692f93bd35482eb30913d7a78e4aeec489c420d9d7e3ff6e065072d6e40f5c6dd5048cf987f931d823dcfc9176965ec90ea72c04515c1b1a6643863b78260f5ced0d99e2ec2038cbda7cf3126fca537d7afc1bf1d3df10f561a84a594d672d87b780d2dff",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1776054645.664,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "Strict"
+        },
+        {
+            "name": "_dyid",
+            "value": "8660422334316341215",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1777437046,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "ABTastySession",
+            "value": "mrasn=&lp=https%253A%252F%252Fwww.newworld.co.nz%252Fshop%252Fcategory%252Ffruit-and-vegetables%253Fpg%253D1",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846848,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "ABTasty",
+            "value": "uid=jpe8srq8bc0735ms&fst=1774774240177&pst=1774774240177&cst=1774845048917&ns=2&pvt=4&pvis=1&th=1426170.1772246.2.2.1.1.1774774240256.1774775240863.0.1",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1808988640,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "cf_clearance",
+            "value": "Kv4qUIExV7Rt9kb0yjTG8kEippwn_A4168wYwb6pLtM-1774845050-1.2.1.1-sdH_xhgVUuFcD36pJbjm0q_oYgsuf4IQtk0V7ltQd_qOVwTgGUXXlT1hJ.4BUYf7CLUiVza8bQ7chTALu3vs0exBQ2lGIB5N_V17ZjqBse62tjvCfNf7YHNFT4wi4D59dL34Wy6y8Gh9X0IWYJxfDv98y5EogF8SnCm7F03J6GJAjHpwFgRfMuFcDygOz9klHj52LHpeaaK9aj_h.UZklKoJzG2LaNM2Ae3V0_A7Uiw",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1806381049.908,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "__cf_bm",
+            "value": "pDh.LTfB_M3.QGfG25dSYjp1XmrAqtQh6NrpKLs1peM-1774845049.9874308-1.0.1.1-.6gBsLYzgUrSQPMiZZcWJwi31B.kZoEfX73ECN_.BnYyKuhJWBZQbx7Ktd5odi2zPIQMYi8Ko0.msyvIwX4rRmqyxntKNXBLPEA2_HXcnUFfyJHtXa7O2xBVuOINWur350K9zvYHMY3B7q7XruOpFA",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846850,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "AWSALBTG",
+            "value": "J1GBhuPq71hlU7i+Fb/wekEn4Xd+8jIjpgRJqFOX/hkQ2+ywmiYSFZVKAVjLLMKj3SiUo7P3Un4lTCrpcvy8GgdtwIHcOGhh1/4jK6IIZr+1PITl5aktdD0i3Yf1b4S+cg657G1BeVOTcXdUsYtbbEXKWcFHBkigLEMPAUGSv70w",
+            "domain": "api-prod.newworld.co.nz",
+            "path": "/",
+            "expires": 1775449852.029,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "AWSALBTGCORS",
+            "value": "J1GBhuPq71hlU7i+Fb/wekEn4Xd+8jIjpgRJqFOX/hkQ2+ywmiYSFZVKAVjLLMKj3SiUo7P3Un4lTCrpcvy8GgdtwIHcOGhh1/4jK6IIZr+1PITl5aktdD0i3Yf1b4S+cg657G1BeVOTcXdUsYtbbEXKWcFHBkigLEMPAUGSv70w",
+            "domain": "api-prod.newworld.co.nz",
+            "path": "/",
+            "expires": 1775449852.04,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "ki_t",
+            "value": "1774774241667%3B1774845054548%3B1774845054548%3B2%3B4",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1809405054.547,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "ki_r",
+            "value": "",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1809405054.549,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "eCom_STORE_ID",
+            "value": "38b074c4-0e5a-4bd5-b743-d30f28d94982",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1806381054,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "STORE_ID_V2",
+            "value": "38b074c4-0e5a-4bd5-b743-d30f28d94982|False",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1806381054,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "BVBRANDSID",
+            "value": "79ee78a7-dfcc-4fbf-a0d3-fba2bfcd95cb",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846855,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_hjSessionUser_877117",
+            "value": "eyJpZCI6IjBkNWE5YjJiLTY2YWItNTc5ZC04ODZkLTFhMzdlYmRjOGY1NSIsImNyZWF0ZWQiOjE3NzQ3NzQyNDE5NDEsImV4aXN0aW5nIjp0cnVlfQ==",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1806381055,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_hjSession_877117",
+            "value": "eyJpZCI6Ijc0ZTc2YzYwLTE1MTMtNDY4My04MDNmLTQ5NjZlNTc0MjNhZCIsImMiOjE3NzQ4NDUwNTUzMjIsInMiOjEsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjowLCJzcCI6MH0=",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846855,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_fbp",
+            "value": "fb.2.1774845055522.161377105663768514",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1782621057.405,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "ORA_FPC",
+            "value": "id=94d71974-5a02-4e1d-9535-661c4e87cae4",
+            "domain": "www.newworld.co.nz",
+            "path": "/",
+            "expires": 1809405057.795,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_ga_6M61DH60LD",
+            "value": "GS2.1.s1774845056$o2$g1$t1774845058$j58$l0$h492207873",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1809405058.08,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "None"
+        },
+        {
+            "name": "WTPERSIST",
+            "value": "",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1806381058,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "FPID",
+            "value": "FPID2.3.fLkLk2herlYvo3FWqsS0Y%2FR09ZmhEuJhbUEYFSGcZ%2BA%3D.1774774242",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1809405058.389,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "_dyjsession",
+            "value": "tfbpilinw7uepuf4fw03ckcr11xuvu5y",
+            "domain": ".newworld.co.nz",
+            "path": "/",
+            "expires": 1774846858.66,
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "IDE",
+            "value": "AHWqTUmptV95JPJU0q2585-HwYANiQosctbUfiZW1h-cmOpcA8Ehr-Medmg4hrncUUM",
+            "domain": ".doubleclick.net",
+            "path": "/",
+            "expires": 1809405057.885,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        },
+        {
+            "name": "cee",
+            "value": "4ecIE6H9bOmjaJT3adlqiQFWb9ARBgHwspts152yZfU%3D.%7B%7D",
+            "domain": ".capig.stape.id",
+            "path": "/events/e0a1fe876a10a438afae6a8d38cd874ddc6da8650b017061c335fc5a19d536a9",
+            "expires": 1782621055.956,
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "None"
+        }
+    ],
+    "origins": [
+        {
+            "origin": "https://www.newworld.co.nz",
+            "localStorage": [
+                {
+                    "name": "_dyaud_page",
+                    "value": "*2026-03-30*2026-03-30 00:00:00"
+                },
+                {
+                    "name": "fs",
+                    "value": "{\"storeTimeslots\":{\"slots\":[],\"expiredTimeslotNotificationDismissed\":false,\"willExpireTimeslotNotificationDismissed\":false,\"expiredSoftTimeslotNotificationDismissed\":false,\"willExpireTimeslotNotificationClosedTimestamp\":null}}"
+                },
+                {
+                    "name": "_dy_soct",
+                    "value": "1774845038!!"
+                },
+                {
+                    "name": "_gcl_ls",
+                    "value": "{\"schema\":\"gcl\",\"version\":1,\"gcl_ctr\":{\"value\":{\"value\":0,\"timeouts\":0,\"errors\":0,\"creationTimeMs\":1774774240645},\"expires\":1782550240645},\"gtg_load_status\":{\"status\":2,\"expires\":1774860641337}}"
+                },
+                {
+                    "name": "_dy_tsrc",
+                    "value": "Direct"
+                },
+                {
+                    "name": "_dy_device",
+                    "value": "{\"brand\":\"Other\",\"type\":\"desktop\",\"os\":\"linux\",\"browser\":\"firefox\"}"
+                },
+                {
+                    "name": "FLAGSMITH_FLAGS",
+                    "value": "{\"api\":\"https://edge.api.flagsmith.com/api/v1/\",\"environmentID\":\"ser.FSwdzjYsRbzB8jvcKKXPXS\",\"flags\":{\"test_login_enabled\":{\"id\":93873,\"enabled\":false,\"value\":\"\"},\"feature_flag_url_override\":{\"id\":93993,\"enabled\":false,\"value\":null},\"feature_flag_identity_enabled\":{\"id\":94261,\"enabled\":false,\"value\":\"\"},\"varied_timeslot_pricing\":{\"id\":94875,\"enabled\":true,\"value\":\"2de22d8e-54d4-4575-be10-0d783324ec75\"},\"product_reviews_bazaarvoice\":{\"id\":103544,\"enabled\":true,\"value\":\"{\\n    \\\"regions\\\": [\\\"NI\\\", \\\"SI\\\"],\\n    \\\"categories\\\": [\\n      \\\"Baby Care\\\",\\n      \\\"Baby & Toddler\\\",\\n      \\\"Pet Supplies\\\",\\n      \\\"Cat\\\",\\n      \\\"Dog\\\",\\n      \\\"Birds, Fish & Small Animals\\\",\\n      \\\"Pet Health & Accessories\\\",\\n      \\\"Cheese\\\",\\n      \\\"Cold Drinks\\\",\\n      \\\"Hot Drinks\\\",\\n      \\\"Desserts\\\",\\n      \\\"Baking Supplies & Sugar\\\",\\n      \\\"Biscuits & Crackers\\\",\\n      \\\"Breakfast Cereals\\\",\\n      \\\"Canned & Prepared Foods\\\",\\n      \\\"Condiments & Dressings\\\",\\n      \\\"Confectionery\\\",\\n      \\\"Jams, Honey & Spreads\\\",\\n      \\\"Pasta, Rice & Noodles\\\",\\n      \\\"Salad & Cooking Oils\\\",\\n      \\\"Sauces, Stock & Marinades\\\",\\n      \\\"Snack Foods\\\",\\n      \\\"World Foods\\\",\\n      \\\"Beer\\\",\\n      \\\"Craft Beer\\\",\\n      \\\"Cider\\\",\\n      \\\"Champagne & Sparkling Wine\\\",\\n      \\\"Red Wine\\\",\\n      \\\"White Wine\\\",\\n      \\\"Rose Wine\\\",\\n      \\\"Moscato & Sweet Wine\\\",\\n      \\\"Cask Wine\\\",\\n      \\\"Mini Wine Bottles & Cans\\\",\\n      \\\"Lower Alcohol Drinks\\\",\\n      \\\"Alcohol Free Drinks\\\",\\n      \\\"Seltzers & Other Alcoholic Drinks\\\",\\n      \\\"Bath, Shower & Soap\\\",\\n      \\\"Hair Care\\\",\\n      \\\"Dental & Oral Care\\\",\\n      \\\"Deodorant & Body Sprays\\\",\\n      \\\"Skin Care & Sun Care\\\",\\n      \\\"Shaving & Hair Removal\\\",\\n      \\\"Make Up & Nail Care\\\",\\n      \\\"Period & Continence Care\\\",\\n      \\\"Tissues & Cotton Wool\\\",\\n      \\\"Medical & First Aid\\\",\\n      \\\"Vitamins & Supplements\\\",\\n      \\\"Sports Nutrition & Weight Management\\\",\\n      \\\"Pregnancy & Contraception\\\",\\n      \\\"Cleaning Products\\\",\\n      \\\"Garage & Outdoor\\\",\\n      \\\"Household\\\",\\n      \\\"Laundry\\\",\\n      \\\"Stationery & Entertainment\\\",\\n      \\\"Cleaning & Accessories\\\",\\n      \\\"Toilet Paper, Tissues & Paper Towels\\\",\\n      \\\"Bathroom & Toilet Cleaners\\\",\\n      \\\"Dishwashing\\\",\\n      \\\"Kitchen Cleaners\\\",\\n      \\\"Food Wrap, Storage & Bags\\\",\\n      \\\"Pest & Insect Control\\\",\\n      \\\"Homewares\\\",\\n      \\\"Clothing & Accessories\\\",\\n      \\\"Batteries & Electrical\\\",\\n      \\\"Coffee\\\",\\n      \\\"Tea\\\",\\n      \\\"Hot Chocolate & Milk Drinks\\\",\\n      \\\"Water\\\",\\n      \\\"Soft Drinks & Mixers\\\",\\n      \\\"Juice & Smoothies\\\",\\n      \\\"Sports & Energy Drinks\\\",\\n      \\\"Syrups, Cordials & Powdered Drinks\\\",\\n      \\\"Kombucha & Functional Drinks\\\",\\n      \\\"Chips, Nuts & Snacks\\\",\\n      \\\"Chocolate, Sweets & Chewing Gum\\\",\\n      \\\"Canned Foods & Packets\\\",\\n      \\\"Long Life & Dairy Free Milk\\\",\\n      \\\"Cooking Sauces, Stocks & Marinades\\\",\\n      \\\"Table Sauces, Dressings & Condiments\\\",\\n      \\\"Oil & Vinegar\\\",\\n      \\\"Spices, Seasoning & Coatings\\\",\\n      \\\"Bulk Foods\\\",\\n      \\\"World Foods\\\"\\n    ]\\n  }\"},\"page_test_poc\":{\"id\":105721,\"enabled\":false,\"value\":null},\"page_my_account_my_lists\":{\"id\":108368,\"enabled\":false,\"value\":null},\"page_shop_from_order\":{\"id\":108511,\"enabled\":false,\"value\":null},\"test_flag_1\":{\"id\":110542,\"enabled\":false,\"value\":null},\"te_atatu_kumeu_remote_collection\":{\"id\":131166,\"enabled\":false,\"value\":null},\"content_stack\":{\"id\":135183,\"enabled\":false,\"value\":null},\"quick_comm\":{\"id\":135577,\"enabled\":true,\"value\":\"\"},\"delivery_pass_enabled\":{\"id\":141275,\"enabled\":false,\"value\":\"\"},\"airpoints_v3\":{\"id\":142820,\"enabled\":true,\"value\":null},\"pm_modal_with_unit_pricing_enabled\":{\"id\":146181,\"enabled\":true,\"value\":null},\"bv_communication_preference\":{\"id\":154040,\"enabled\":true,\"value\":null},\"bought_before_search\":{\"id\":163980,\"enabled\":true,\"value\":null},\"purple\":{\"id\":168788,\"enabled\":false,\"value\":0},\"live_chat_v2_enabled\":{\"id\":170166,\"enabled\":false,\"value\":null},\"club_card_menu_enabled\":{\"id\":175051,\"enabled\":false,\"value\":false},\"local_alcohol_policy\":{\"id\":191681,\"enabled\":false,\"value\":null}},\"ts\":null,\"traits\":{},\"evaluationEvent\":null}"
+                },
+                {
+                    "name": "ABTastyData",
+                    "value": "{\"VisitedPages\":[{\"url\":\"https://www.newworld.co.nz/\",\"visite\":1,\"time\":1774774240177,\"title\":\"New World | Online Grocery Shopping \u2013 Easy, Convenient, Fresh | New World\"},{\"url\":\"https://www.newworld.co.nz/\",\"visite\":1,\"time\":1774775240486,\"title\":\"New World | Online Grocery Shopping \u2013 Easy, Convenient, Fresh | New World\"},{\"url\":\"https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1\",\"visite\":1,\"time\":1774776038634,\"title\":\"Fruit & Vegetables | New World\"},{\"url\":\"https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1\",\"visite\":2,\"time\":1774845048917,\"title\":\"Fruit & Vegetables | New World\"}],\"eai\":{\"collectDone\":true}}"
+                },
+                {
+                    "name": "lastExternalReferrer",
+                    "value": "empty"
+                },
+                {
+                    "name": "_dyaud_nchc",
+                    "value": "2356145.2863016*11559706@1*11559706@3.11559707@1*2356142@1.2356143@1.2356144@1.2356145@1.2775772@1.2775773@1.2775774@1.2863016@1.2863017@1.2863018@1.2863019@1.2863020@1.2863021@1"
+                },
+                {
+                    "name": "_dyid",
+                    "value": "8660422334316341215"
+                },
+                {
+                    "name": "lastExternalReferrerTime",
+                    "value": "1774845055484"
+                },
+                {
+                    "name": "_dycst",
+                    "value": "dk.l.f.ms."
+                },
+                {
+                    "name": "_dy_csc",
+                    "value": "{\"_pv\":8,\"_ses\":2,\"_prev_ses\":\"tfbpilinw7uepuf4fw03ckcr11xuvu5y\",\"firstpv\":{\"ts\":1774774238005,\"ses\":1,\"pv\":1},\"lastevent_sync cart\":{\"ts\":1774845056888,\"ses\":2,\"pv\":8}}"
+                },
+                {
+                    "name": "ORA_COOK_STORE",
+                    "value": "{\"ORA_FPC\":\"ORA_FPC=id=94d71974-5a02-4e1d-9535-661c4e87cae4; expires=Wed, 29 Mar 2028 16:08:29 GMT; path=/; secure; secure\",\"WTPERSIST\":\"WTPERSIST=;domain=.newworld.co.nz;path=/;expires=Tue, 30 Mar 2027 04:30:58 GMT; secure\"}"
+                }
+            ]
+        }
+    ]
+}

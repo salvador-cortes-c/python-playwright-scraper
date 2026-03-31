@@ -1,0 +1,110 @@
+name: Daily Product Scrape (ScrapingBee)
+
+on:
+  schedule:
+    # Run at 2 AM UTC daily (adjust for your timezone)
+    - cron: '0 2 * * *'
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to scrape (optional)'
+        required: false
+        default: 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1'
+      limit:
+        description: 'Max products to scrape'
+        required: false
+        default: '20'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      # Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      # Install Python dependencies
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp beautifulsoup4 requests
+      
+      # Run ScrapingBee scraper
+      - name: Run ScrapingBee scraper
+        env:
+          SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPINGBEE_API_KEY }}
+        run: |
+          # Use input parameters if provided, otherwise use defaults
+          URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
+          LIMIT="${{ github.event.inputs.limit || '20' }}"
+          
+          echo "Running ScrapingBee scraper..."
+          echo "URL: $URL"
+          echo "Limit: $LIMIT"
+          
+          if [ -z "$SCRAPINGBEE_API_KEY" ]; then
+            echo "❌ ERROR: SCRAPINGBEE_API_KEY secret not set"
+            echo ""
+            echo "💡 How to set it:"
+            echo "   1. Go to Repository Settings → Secrets and variables → Actions"
+            echo "   2. Click 'New repository secret'"
+            echo "   3. Name: SCRAPINGBEE_API_KEY"
+            echo "   4. Value: Your ScrapingBee API key"
+            exit 1
+          fi
+          
+          python scraper_scrapingbee_newworld.py \
+            --url "$URL" \
+            --limit "$LIMIT" \
+            --output products.json \
+            --delay-seconds 3
+      
+      # Upload scraped data as artifact
+      - name: Upload scraped data
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-results-scrapingbee
+          path: |
+            products.json
+          retention-days: 7
+      
+      # Create a summary of what was scraped
+      - name: Create scrape summary
+        if: always()
+        run: |
+          echo "## ScrapingBee Scraping Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "products.json" ]; then
+            PRODUCT_COUNT=$(jq '. | length' products.json 2>/dev/null || echo "0")
+            echo "✅ **Products scraped:** $PRODUCT_COUNT" >> $GITHUB_STEP_SUMMARY
+            
+            # Show sample product
+            if [ "$PRODUCT_COUNT" -gt 0 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Sample product:**" >> $GITHUB_STEP_SUMMARY
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              jq '.[0] | {name: .name, price: .price}' products.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not extract sample" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **Products file not created**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow run:** $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "**Manual run with URL:** ${{ github.event.inputs.url || 'default' }}" >> $GITHUB_STEP_SUMMARY
+          fi
