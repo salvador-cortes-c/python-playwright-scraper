@@ -1,19 +1,95 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.DS_Store
-run_scraper.sh
-start_display.sh
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Playwright / scraper outputs
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific
+# Scraper outputs (generated files)
 products.json
 price_snapshots.json
-category_urls*.json
 scrape_progress.json
-storage_state.json
+storage_state.json  # Cookies - regenerate as needed
+category_urls*.json
 
-# Local dev utilities
+# Test/output files
+*.json  # Except requirements.txt
+!requirements.txt
+*.html
+*.log
+*.tmp
+test_*.json
+debug_*.html
+scrapingbee_*.html
+newworld_products.json
+improved_products.json
+cookie_test.json
+first_run_test.json
+
+# Backup directories
+backup_*/
+archive/
+
+# Local development
+local_config.json
+.env
+.env.local
+.env.*.local
 _probe_selectors.py
 
-# Editor
-.vscode/
+# Test scripts (generated)
+test_*.py
+
+# Playwright browsers
+.playwright/
+node_modules/
+
+# Keep these scripts (they're part of the project)
+#!run_scraper.sh
+#!start_display.sh
+#!refresh_cookies.sh
+#!test_improved_scraper.sh
+#!test_newworld_scrapingbee.sh
+#!generate_cookies_with_display.sh
