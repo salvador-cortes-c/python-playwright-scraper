@@ -64,7 +64,7 @@ fi
 
 echo ""
 echo "2. Testing New World-specific scraper..."
-python3 scraper_scrapingbee_newworld.py \
+python3 scraper.py \
     --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
     --limit 10 \
     --output newworld_products.json \
@@ -83,6 +83,6 @@ else
     echo ""
     echo "💡 Next steps:"
     echo "   1. Check debug_newworld.html for page structure"
-    echo "   2. Update selectors in scraper_scrapingbee_newworld.py"
+    echo "   2. Update selectors in scraper.py"
     echo "   3. Test with different URL or parameters"
 fi

@@ -19,7 +19,7 @@ echo "1. Checking required files..."
 REQUIRED_FILES=(
   ".github/workflows/scrape_scrapingbee.yml"
   ".github/workflows/scrape-test.yml"
-  "scraper_scrapingbee_newworld.py"
+  "scraper.py"
   "requirements.txt"
 )
 
@@ -57,11 +57,11 @@ echo "  - Artifact upload: products.json, price_snapshots.json"
 
 echo ""
 echo "5. Quick test of scraper help..."
-if [ -f "scraper_scrapingbee_newworld.py" ]; then
-  "$PYTHON_CMD" scraper_scrapingbee_newworld.py --help | head -20
+if [ -f "scraper.py" ]; then
+  "$PYTHON_CMD" scraper.py --help | head -20
   echo "..."
 else
-  echo "  ❌ scraper_scrapingbee_newworld.py not found"
+  echo "  ❌ scraper.py not found"
 fi
 
 echo ""

@@ -79,6 +79,7 @@ asyncio.run(test())
           # Using httpbin.org which is a test HTTP request & response service
           python scraper.py \
             --url "https://httpbin.org/html" \
+            --provider direct \
             --product-selector "h1" \
             --name-selector "h1" \
             --price-selector "p" \

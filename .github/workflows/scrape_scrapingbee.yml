@@ -70,7 +70,7 @@ jobs:
             exit 1
           fi
           
-          python scraper_scrapingbee_newworld.py \
+          python scraper.py \
             --url "$URL" \
             --limit "$LIMIT" \
             --crawl-category-pages \
@@ -79,10 +79,16 @@ jobs:
             --output products.json \
             --price-output price_snapshots.json \
             --progress-file scrape_progress.json \
+            --resume \
             --append-snapshots \
             --flush-every-url \
-            --max-rate-limit-retries 1 \
-            --rate-limit-wait-seconds 120 \
+            --max-rate-limit-retries 2 \
+            --rate-limit-wait-seconds 60 \
+            --rate-limit-max-delay-seconds 300 \
+            --max-retries 3 \
+            --retry-base-delay-seconds 5 \
+            --retry-max-delay-seconds 60 \
+            --initial-delay-seconds 2 \
             --delay-seconds 3
       
       # Upload scraped data as artifact

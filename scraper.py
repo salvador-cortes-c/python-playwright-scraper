@@ -25,9 +25,238 @@ from bs4 import BeautifulSoup, Tag
 SCRAPINGBEE_API_URL = "https://app.scrapingbee.com/api/v1/"
 SCRAPINGBEE_API_KEY_ENV = "SCRAPINGBEE_API_KEY"
 
+_PROVIDER_ENDPOINTS: dict[str, str] = {
+    "scrapingbee": "https://app.scrapingbee.com/api/v1/",
+    "scraperapi":  "http://api.scraperapi.com/",
+    "crawlbase":   "https://api.crawlbase.com/",
+    "zenrows":     "https://api.zenrows.com/v1/",
+}
+_PROVIDER_KEY_ENVVARS: dict[str, str] = {
+    "scrapingbee": "SCRAPINGBEE_API_KEY",
+    "scraperapi":  "SCRAPERAPI_KEY",
+    "crawlbase":   "CRAWLBASE_TOKEN",
+    "zenrows":     "ZENROWS_API_KEY",
+    "direct":      "",
+}
+
 
 class RateLimitError(RuntimeError):
     pass
+
+
+class TransientError(RuntimeError):
+    """Retriable network or server error (timeout, connection reset, empty response)."""
+
+
+def _compute_backoff(attempt: int, base_seconds: float, max_seconds: float) -> float:
+    """Exponential backoff with full jitter.
+
+    Returns a delay between base_seconds and min(base_seconds * 2^attempt, max_seconds),
+    randomised with ±25% jitter so concurrent workers don't retry in sync.
+    """
+    exp = min(base_seconds * (2 ** attempt), max_seconds)
+    return exp * (0.75 + 0.5 * random.random())
+
+
+# --- Scraper providers --------------------------------------------------------
+
+FetchResult = tuple[Optional[str], Optional[dict[str, Any]], int | None]
+
+
+class _BaseProvider:
+    """Shared fetch mechanics for proxy-API-based scraping providers."""
+
+    def __init__(self, api_key: str, render_wait_ms: int, country_code: str, premium_proxy: bool) -> None:
+        self.api_key = api_key
+        self.render_wait_ms = render_wait_ms
+        self.country_code = country_code
+        self.premium_proxy = premium_proxy
+
+    @property
+    def name(self) -> str:  # pragma: no cover
+        raise NotImplementedError
+
+    def _endpoint(self) -> str:  # pragma: no cover
+        raise NotImplementedError
+
+    def _build_params(self, url: str) -> dict[str, str]:  # pragma: no cover
+        raise NotImplementedError
+
+    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+        """Fetch a URL via the provider API and return (html, error, status)."""
+        params = self._build_params(url)
+        try:
+            async with session.get(self._endpoint(), params=params, timeout=60) as response:
+                status = response.status
+                text = await response.text()
+                if status != 200:
+                    try:
+                        payload = json.loads(text)
+                    except Exception:
+                        payload = {"error": f"HTTP {status}", "response": text[:300]}
+                    return None, payload, status
+                if "<html" in text.lower() or "<!doctype" in text.lower():
+                    return text, None, status
+                try:
+                    payload = json.loads(text)
+                    return None, payload, status
+                except Exception:
+                    return None, {"error": "Invalid non-HTML response", "response": text[:300]}, status
+        except asyncio.TimeoutError:
+            return None, {"error": "Timeout after 60 seconds"}, None
+        except Exception as exc:
+            return None, {"error": str(exc)}, None
+
+
+class ScrapingBeeProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "scrapingbee"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["scrapingbee"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        return {
+            "api_key": self.api_key,
+            "url": url,
+            "render_js": "true",
+            "premium_proxy": "true" if self.premium_proxy else "false",
+            "country_code": self.country_code,
+            "wait": str(max(0, self.render_wait_ms)),
+            "block_ads": "true",
+            "block_resources": "false",
+            "return_page_source": "true",
+        }
+
+
+class ScraperAPIProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "scraperapi"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["scraperapi"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        params: dict[str, str] = {
+            "api_key": self.api_key,
+            "url": url,
+            "render": "true",
+            "country_code": self.country_code,
+            "keep_headers": "true",
+        }
+        if self.premium_proxy:
+            params["premium"] = "true"
+        if self.render_wait_ms > 0:
+            params["wait_for_css"] = "body"
+        return params
+
+
+class CrawlbaseProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "crawlbase"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["crawlbase"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        return {
+            "token": self.api_key,
+            "url": url,
+            "headless": "true",
+            "page_wait": str(max(0, self.render_wait_ms)),
+            "country": self.country_code.upper(),
+        }
+
+
+class ZenrowsProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "zenrows"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["zenrows"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        params: dict[str, str] = {
+            "apikey": self.api_key,
+            "url": url,
+            "js_render": "true",
+            "premium_proxy": "true" if self.premium_proxy else "false",
+            "country_code": self.country_code,
+        }
+        if self.render_wait_ms > 0:
+            params["wait"] = str(self.render_wait_ms)
+        return params
+
+
+class DirectProvider:
+    """Fetch URLs directly without a proxy (for testing or non-protected sites)."""
+
+    @property
+    def name(self) -> str:
+        return "direct"
+
+    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-NZ,en;q=0.5",
+        }
+        try:
+            async with session.get(url, headers=headers, timeout=30) as response:
+                status = response.status
+                text = await response.text()
+                if status not in (200, 201):
+                    return None, {"error": f"HTTP {status}", "response": text[:300]}, status
+                if "<html" in text.lower() or "<!doctype" in text.lower():
+                    return text, None, status
+                return None, {"error": "Non-HTML response", "response": text[:300]}, status
+        except asyncio.TimeoutError:
+            return None, {"error": "Timeout after 30 seconds"}, None
+        except Exception as exc:
+            return None, {"error": str(exc)}, None
+
+
+AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | DirectProvider
+
+
+def build_provider(
+    provider_name: str,
+    api_key: str | None,
+    render_wait_ms: int,
+    country_code: str,
+    premium_proxy: bool,
+) -> AnyProvider:
+    if provider_name == "direct":
+        return DirectProvider()
+    if not api_key:
+        env_hint = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
+        hint = f"Set {env_hint} or pass --api-key." if env_hint else "Pass --api-key."
+        raise ValueError(f"Provider '{provider_name}' requires an API key. {hint}")
+    cls_map: dict[str, type[_BaseProvider]] = {
+        "scrapingbee": ScrapingBeeProvider,
+        "scraperapi":  ScraperAPIProvider,
+        "crawlbase":   CrawlbaseProvider,
+        "zenrows":     ZenrowsProvider,
+    }
+    cls = cls_map.get(provider_name)
+    if cls is None:
+        raise ValueError(
+            f"Unknown provider '{provider_name}'. "
+            f"Choose from: {', '.join(list(cls_map) + ['direct'])}"
+        )
+    return cls(
+        api_key=api_key,
+        render_wait_ms=render_wait_ms,
+        country_code=country_code,
+        premium_proxy=premium_proxy,
+    )
+
+
+# ------------------------------------------------------------------------------
 
 
 @dataclass
@@ -257,51 +486,6 @@ def _with_page_number(url: str, page_number: int) -> str:
     return urlunparse(parsed._replace(query=updated_query))
 
 
-async def fetch_with_scrapingbee(
-    session: aiohttp.ClientSession,
-    url: str,
-    api_key: str,
-    wait_ms: int,
-) -> tuple[Optional[str], Optional[dict[str, Any]], int | None]:
-    params = {
-        "api_key": api_key,
-        "url": url,
-        "render_js": "true",
-        "premium_proxy": "true",
-        "country_code": "nz",
-        "wait": str(max(0, int(wait_ms))),
-        "block_ads": "true",
-        "block_resources": "false",
-        "return_page_source": "true",
-    }
-
-    try:
-        async with session.get(SCRAPINGBEE_API_URL, params=params, timeout=60) as response:
-            status = response.status
-            text = await response.text()
-
-            if status != 200:
-                try:
-                    payload = await response.json()
-                except Exception:
-                    payload = {"error": f"HTTP {status}", "response": text[:300]}
-                return None, payload, status
-
-            if "<html" in text.lower() or "<!doctype" in text.lower():
-                return text, None, status
-
-            try:
-                payload = await response.json()
-                return None, payload, status
-            except Exception:
-                return None, {"error": "Invalid non-HTML response", "response": text[:300]}, status
-
-    except asyncio.TimeoutError:
-        return None, {"error": "Timeout after 60 seconds"}, None
-    except Exception as exc:
-        return None, {"error": str(exc)}, None
-
-
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     href_elements = soup.select("a[href*='pg=']")
@@ -493,23 +677,24 @@ def scrape_products_from_html(
 async def scrape_url(
     session: aiohttp.ClientSession,
     url: str,
-    api_key: str,
-    wait_ms: int,
+    provider: AnyProvider,
     args: argparse.Namespace,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
-    html, error, status = await fetch_with_scrapingbee(session=session, url=url, api_key=api_key, wait_ms=wait_ms)
+    html, error, status = await provider.fetch(session, url)
 
     if error:
         err_title = str(error.get("title", "")).lower() if isinstance(error, dict) else ""
         err_body = str(error).lower()
         if _is_rate_limited(status, err_title, err_body):
             raise RateLimitError(f"Cloudflare rate limit detected while scraping {url} (Error 1015/429).")
+        _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "unreachable", "eof")
+        if any(t in err_body for t in _TRANSIENT_SIGNALS):
+            raise TransientError(f"Transient network error for {url}: {error}")
         print(f"WARNING: request failed for {url}: {error}")
         return [], []
 
     if not html:
-        print(f"WARNING: empty HTML for {url}")
-        return [], []
+        raise TransientError(f"Empty HTML response for {url}")
 
     soup = BeautifulSoup(html, "html.parser")
     title = _clean_text(soup.title.get_text(" ", strip=True) if soup.title else "").lower()
@@ -542,10 +727,9 @@ async def scrape_url(
 async def fetch_html_or_raise(
     session: aiohttp.ClientSession,
     url: str,
-    api_key: str,
-    wait_ms: int,
+    provider: AnyProvider,
 ) -> str:
-    html, error, status = await fetch_with_scrapingbee(session=session, url=url, api_key=api_key, wait_ms=wait_ms)
+    html, error, status = await provider.fetch(session, url)
     if error:
         title = str(error.get("title", "")).lower() if isinstance(error, dict) else ""
         body = str(error).lower()
@@ -745,7 +929,61 @@ async def main() -> None:
         "--rate-limit-wait-seconds",
         type=int,
         default=300,
-        help="Seconds to wait before retrying after rate limit (if retries enabled)",
+        help="Base delay in seconds for first rate-limit retry (subsequent retries use exponential backoff)",
+    )
+    parser.add_argument(
+        "--rate-limit-max-delay-seconds",
+        type=int,
+        default=600,
+        help="Maximum backoff cap in seconds for rate-limit retries",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum retries per URL on transient network errors (timeout, connection reset, empty response)",
+    )
+    parser.add_argument(
+        "--retry-base-delay-seconds",
+        type=float,
+        default=5.0,
+        help="Base delay in seconds for first transient-error retry (subsequent retries use exponential backoff)",
+    )
+    parser.add_argument(
+        "--retry-max-delay-seconds",
+        type=float,
+        default=120.0,
+        help="Maximum backoff cap in seconds for transient-error retries",
+    )
+    parser.add_argument(
+        "--initial-delay-seconds",
+        type=float,
+        default=0.0,
+        help="Wait this many seconds before the first request (useful to stagger parallel GHA runs)",
+    )
+    parser.add_argument(
+        "--provider",
+        default="scrapingbee",
+        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "direct"],
+        help="Scraping service provider to use (default: scrapingbee).",
+    )
+    parser.add_argument(
+        "--country-code",
+        default="nz",
+        help="Country code for proxy targeting (default: nz).",
+    )
+    parser.add_argument(
+        "--premium-proxy",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Use premium/residential proxies when supported by the provider (default: true).",
+    )
+    parser.add_argument(
+        "--render-wait-ms",
+        type=int,
+        default=None,
+        dest="render_wait_ms",
+        help="Milliseconds to wait for JS rendering (provider-agnostic). Overrides --scrapingbee-wait-ms when set.",
     )
     parser.add_argument(
         "--storage-state",
@@ -755,22 +993,36 @@ async def main() -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="ScrapingBee API key (or set SCRAPINGBEE_API_KEY env var)",
+        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPINGBEE_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY).",
     )
     parser.add_argument(
         "--scrapingbee-wait-ms",
         type=int,
         default=3000,
-        help="Milliseconds for ScrapingBee to wait after render_js",
+        help="Deprecated: use --render-wait-ms instead. Kept for backward compatibility.",
     )
 
     args = parser.parse_args()
 
-    api_key = args.api_key or os.getenv(SCRAPINGBEE_API_KEY_ENV)
-    if not api_key:
-        print("Error: ScrapingBee API key required")
-        print("Set SCRAPINGBEE_API_KEY or pass --api-key")
+    provider_name: str = args.provider
+    env_var = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
+    api_key: str | None = args.api_key or (os.getenv(env_var) if env_var else None)
+    render_wait_ms: int = (
+        args.render_wait_ms if args.render_wait_ms is not None else args.scrapingbee_wait_ms
+    )
+    try:
+        provider = build_provider(
+            provider_name=provider_name,
+            api_key=api_key,
+            render_wait_ms=render_wait_ms,
+            country_code=args.country_code,
+            premium_proxy=args.premium_proxy,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}")
         raise SystemExit(1)
+
+    print(f"Using scraping provider: {provider_name}")
 
     unsupported_flags_used = any(
         [
@@ -803,6 +1055,10 @@ async def main() -> None:
     if args.append_snapshots:
         all_snapshots = load_price_snapshots(price_output_path)
 
+    if args.initial_delay_seconds > 0:
+        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...")
+        await asyncio.sleep(args.initial_delay_seconds)
+
     async with aiohttp.ClientSession() as session:
 
         async def resolve_urls() -> list[str]:
@@ -817,8 +1073,7 @@ async def main() -> None:
                         html = await fetch_html_or_raise(
                             session=session,
                             url=input_url,
-                            api_key=api_key,
-                            wait_ms=args.scrapingbee_wait_ms,
+                            provider=provider,
                         )
                         categories = discover_category_urls_from_html(
                             start_url=input_url,
@@ -850,8 +1105,7 @@ async def main() -> None:
                             html = await fetch_html_or_raise(
                                 session=session,
                                 url=category_url,
-                                api_key=api_key,
-                                wait_ms=args.scrapingbee_wait_ms,
+                                provider=provider,
                             )
                             pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
                         except RateLimitError as exc:
@@ -910,27 +1164,50 @@ async def main() -> None:
 
         for current_url in targets:
             print(f"Scraping URL: {current_url}")
-            attempt = 0
+            rl_attempt = 0
+            transient_attempt = 0
+            products, snapshots = [], []
 
             while True:
                 try:
                     products, snapshots = await scrape_url(
                         session=session,
                         url=current_url,
-                        api_key=api_key,
-                        wait_ms=args.scrapingbee_wait_ms,
+                        provider=provider,
                         args=args,
                     )
                     break
                 except RateLimitError as exc:
                     print(f"WARNING: {exc}")
-                    if attempt >= max(0, int(args.max_rate_limit_retries)):
+                    if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
                         rate_limit_hit = True
-                        products, snapshots = [], []
                         break
-                    attempt += 1
-                    wait_seconds = max(0, int(args.rate_limit_wait_seconds))
-                    print(f"Waiting {wait_seconds}s then retrying ({attempt}/{args.max_rate_limit_retries})...")
+                    rl_attempt += 1
+                    wait_seconds = _compute_backoff(
+                        rl_attempt,
+                        base_seconds=float(args.rate_limit_wait_seconds),
+                        max_seconds=float(args.rate_limit_max_delay_seconds),
+                    )
+                    print(
+                        f"Rate limit: waiting {wait_seconds:.1f}s then retrying "
+                        f"({rl_attempt}/{args.max_rate_limit_retries})..."
+                    )
+                    await asyncio.sleep(wait_seconds)
+                except TransientError as exc:
+                    print(f"WARNING: {exc}")
+                    if transient_attempt >= max(0, int(args.max_retries)):
+                        print(f"Giving up on {current_url} after {transient_attempt} transient retries")
+                        break
+                    transient_attempt += 1
+                    wait_seconds = _compute_backoff(
+                        transient_attempt,
+                        base_seconds=float(args.retry_base_delay_seconds),
+                        max_seconds=float(args.retry_max_delay_seconds),
+                    )
+                    print(
+                        f"Transient error: waiting {wait_seconds:.1f}s then retrying "
+                        f"({transient_attempt}/{args.max_retries})..."
+                    )
                     await asyncio.sleep(wait_seconds)
 
             if rate_limit_hit:

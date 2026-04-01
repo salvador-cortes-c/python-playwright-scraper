@@ -1,6 +1,6 @@
-# Playwright Product Scraper
+# New World Scraper
 
-A Python Playwright scraper that extracts product name, price, and thumbnail image from supermarket pages.
+Scrapes product names, prices, unit prices, promo prices, and images from New World category pages. Supports multiple scraping service providers (ScrapingBee, ScraperAPI, Crawlbase, Zenrows, or direct HTTP), full category crawling, pagination discovery, price history snapshots, resume-on-crash, and exponential-backoff retries.
 
 ## Setup
 
@@ -9,183 +9,270 @@ cd python-playwright-scraper
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-./.venv/bin/python -m playwright install chromium
 ```
 
-## Run
+Export your API key for the chosen provider (default: ScrapingBee):
 
 ```bash
-./.venv/bin/python scraper.py \
-  --url "https://example.com/supermarket/search?q=milk" \
-  --product-selector ".product-item" \
-  --name-selector ".product-title" \
-  --price-selector ".product-price" \
-  --image-selector "img" \
-  --wait-for-selector ".product-item" \
+export SCRAPINGBEE_API_KEY="your_key_here"   # ScrapingBee (default)
+export SCRAPERAPI_KEY="your_key_here"        # ScraperAPI
+export CRAWLBASE_TOKEN="your_key_here"       # Crawlbase
+export ZENROWS_API_KEY="your_key_here"       # Zenrows
+```
+
+Or pass it directly with `--api-key`. No key is needed for `--provider direct`.
+
+---
+
+## Quick start
+
+Scrape one category page:
+
+```bash
+python scraper.py \
+  --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
   --limit 20 \
   --output products.json
 ```
 
-## Multiple URLs
-
-Repeat `--url` to scrape multiple pages in one run:
+Scrape all pages of a category automatically:
 
 ```bash
-./.venv/bin/python scraper.py \
-  --url "https://example.com/page-1" \
-  --url "https://example.com/page-2" \
-  --product-selector ".product-item" \
-  --name-selector ".product-title" \
-  --price-selector ".product-price" \
-  --image-selector "img" \
-  --limit 30 \
-  --dedupe \
-  --output products.json
-```
-
-## Crawl full category pagination
-
-For category pages that use `?pg=`, enable automatic page discovery:
-
-```bash
-./.venv/bin/python scraper.py \
+python scraper.py \
   --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
   --crawl-category-pages \
-  --product-selector "div._1afq4wy0" \
-  --name-selector "[data-testid='product-title']" \
-  --price-selector "[data-testid='price-dollars']" \
-  --price-cents-selector "[data-testid='price-cents']" \
-  --unit-price-selector "[data-testid='product-subtitle']" \
-  --image-selector "[data-testid='product-image']" \
-  --limit 100 \
-  --headed \
-  --manual-wait-seconds 60 \
-  --delay-seconds 5 \
+  --limit 50 \
   --dedupe \
-  --output products.json
+  --output products.json \
+  --price-output price_snapshots.json
 ```
 
-## Discover categories automatically
-
-If a page lists category buttons/links, discover category URLs first and then scrape all their pages:
+Discover all categories from the homepage and crawl every page:
 
 ```bash
-./.venv/bin/python scraper.py \
+python scraper.py \
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
-  --category-name-selector "button._7zlpdc" \
-  --category-link-selector "a._7zlpdd._7zlpdc" \
-  --category-output category_urls.json \
   --crawl-category-pages \
-  --product-selector "div._1afq4wy0" \
-  --name-selector "[data-testid='product-title']" \
-  --price-selector "[data-testid='price-dollars']" \
-  --price-cents-selector "[data-testid='price-cents']" \
-  --unit-price-selector "[data-testid='product-subtitle']" \
-  --image-selector "[data-testid='product-image']" \
   --limit 100 \
-  --headed \
-  --manual-wait-seconds 60 \
-  --delay-seconds 8 \
+  --max-pages 10 \
   --dedupe \
-  --output products.json
+  --resume \
+  --flush-every-url \
+  --output products.json \
+  --price-output price_snapshots.json
 ```
 
-`--category-output` stores discovered category names/URLs in a local JSON file.
-
-If you only want the category list (no product scraping):
+Discover and save only the list of category URLs without scraping products:
 
 ```bash
-./.venv/bin/python scraper.py \
+python scraper.py \
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
-  --category-name-selector "button._7zlpdc" \
-  --category-link-selector "a._7zlpdd._7zlpdc" \
-  --category-output category_urls.json \
   --categories-only \
-  --headed \
-  --manual-wait-seconds 60
+  --category-output category_urls.json
 ```
 
-## Rate limiting (Cloudflare 1015)
-
-- If you see `Error 1015: You are being rate limited`, increase `--delay-seconds` (for example `5` or `8`).
-- For long full-category runs, enable `--flush-every-url` + `--resume` so you can stop/restart without losing progress.
-- The scraper writes progress to `scrape_progress.json` by default.
-- `storage_state.json` is updated during runs (cookies) which can reduce repeated verification prompts.
-- Keep using `--headed` and complete any verification prompts manually.
-- The scraper now stops gracefully on rate limit and saves partial results to the output file.
-
-## New World (bot-protected pages)
-
-New World category pages may return a Cloudflare challenge (`Just a moment...`) for headless browsers.
-
-Use headed mode and allow time to complete verification manually:
+Filter results by keyword:
 
 ```bash
-./.venv/bin/python scraper.py \
-  --url "https://www.newworld.co.nz/shop/category/beer-wine-and-cider/beer/new-zealand-beers?pg=1" \
-  --url "https://www.newworld.co.nz/shop/category/beer-wine-and-cider/beer/new-zealand-beers?pg=2" \
-  --product-selector "article" \
-  --name-selector "h3, h2, [class*='name']" \
-  --price-selector "[class*='price']" \
-  --image-selector "img" \
-  --limit 30 \
-  --headed \
-  --manual-wait-seconds 60 \
-  --output products.json
+python scraper.py \
+  --url "https://www.newworld.co.nz/shop/category/dairy-eggs-and-fridge?pg=1" \
+  --query "milk" \
+  --limit 20 \
+  --output milk_products.json
 ```
 
-If selectors need tuning after challenge verification, inspect the page and adjust `--product-selector`, `--name-selector`, `--price-selector`, and `--image-selector`.
+---
 
-## Query filtering
+## Output files
 
-Use `--query` to keep only matching products:
+| File | Content |
+|---|---|
+| `products.json` | Deduplicated product catalogue (`--output`) |
+| `price_snapshots.json` | Time-series price history (`--price-output`) |
+| `scrape_progress.json` | Resume state — completed URLs (`--progress-file`) |
+| `category_urls.json` | Discovered category list (`--category-output`) |
 
-```bash
-./.venv/bin/python scraper.py --url "https://example.com" --query "milk"
-```
-
-## Scrape specific stores by name
-
-If you want to scrape a specific set of stores (instead of discovering all stores), pass a list of store names:
-
-```bash
-./.venv/bin/python scraper.py \
-  --url "https://www.newworld.co.nz/" \
-  --discover-category-urls \
-  --max-pages 10 \
-  --store-names "New World Rototuna, New World Te Rapa" \
-  --limit 100 \
-  --headed \
-  --manual-wait-seconds 60
-```
-
-You can also repeat `--store-names`:
-
-```bash
-./.venv/bin/python scraper.py \
-  --url "https://www.newworld.co.nz/" \
-  --discover-category-urls \
-  --max-pages 10 \
-  --store-names "New World Karori" \
-  --store-names "New World Island Bay" \
-  --limit 100 \
-  --headed \
-  --manual-wait-seconds 60
-```
-
-## Output
-
-The script writes JSON to the file provided in `--output` (default: `products.json`).
-
-Example record:
+### `products.json` record
 
 ```json
 {
-  "name": "Milk 1L",
-  "price": "€1.19",
-  "image": "https://example.com/images/milk.png",
-  "source_url": "https://example.com/supermarket/search?q=milk"
+  "product_key": "wattie's baked beans 420g__420g",
+  "name": "Wattie's Baked Beans 420g",
+  "packaging_format": "420g",
+  "image": "https://a.fsimg.co.nz/product/..."
 }
 ```
+
+### `price_snapshots.json` record
+
+```json
+{
+  "product_key": "wattie's baked beans 420g__420g",
+  "supermarket_name": "New World Rototuna",
+  "price": "1.79",
+  "unit_price": "$4.26/kg",
+  "source_url": "https://www.newworld.co.nz/shop/category/...",
+  "scraped_at": "2026-04-01T02:00:00+00:00",
+  "promo_price": "",
+  "promo_unit_price": ""
+}
+```
+
+---
+
+## All parameters
+
+### Required
+
+| Flag | Description |
+|---|---|
+| `--url URL` | Target page URL. Repeat to scrape multiple URLs in one run. |
+
+### Provider configuration
+
+| Flag | Default | Description |
+|---|---|---|
+| `--provider NAME` | `scrapingbee` | Scraping service to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `direct`. |
+| `--country-code CC` | `nz` | Country code for proxy targeting (e.g. `us`, `gb`, `au`). |
+| `--premium-proxy` / `--no-premium-proxy` | on | Use residential/premium proxies when supported by the provider. |
+| `--render-wait-ms N` | `3000` | Milliseconds to wait for JavaScript rendering (provider-agnostic). Overrides `--scrapingbee-wait-ms` when set. |
+| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPINGBEE_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, or `ZENROWS_API_KEY`. Not required for `--provider direct`. |
+
+### Authentication
+
+| Provider | Environment variable |
+|---|---|
+| `scrapingbee` (default) | `SCRAPINGBEE_API_KEY` |
+| `scraperapi` | `SCRAPERAPI_KEY` |
+| `crawlbase` | `CRAWLBASE_TOKEN` |
+| `zenrows` | `ZENROWS_API_KEY` |
+| `direct` | *(none required)* |
+
+### Product selectors
+
+These CSS selectors are pre-configured for New World and rarely need to change. Override if the page structure changes.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--product-selector` | `div[data-testid^='product-'][data-testid$='-000']` | CSS selector for product card containers. |
+| `--name-selector` | `[data-testid='product-title']` | Product name element within each card. |
+| `--price-selector` | `[data-testid='price-dollars']` | Dollar part of the regular price. |
+| `--price-cents-selector` | `[data-testid='price-cents']` | Cents part of the regular price. |
+| `--unit-price-selector` | `[data-testid='non-promo-unit-price']` | Unit price string e.g. `$2.99/100g`. |
+| `--promo-price-dollars-selector` | *(long nth-child selector)* | Dollar part of the promotional price. |
+| `--promo-price-cents-selector` | *(long nth-child selector)* | Cents part of the promotional price. |
+| `--promo-unit-price-selector` | *(long nth-child selector)* | Unit price under a promotional price. |
+| `--image-selector` | `[data-testid='product-image']` | Product image element within each card. |
+
+### Output
+
+| Flag | Default | Description |
+|---|---|---|
+| `--output FILE` | `products.json` | File to write the product catalogue. |
+| `--price-output FILE` | `price_snapshots.json` | File to write price snapshots. |
+| `--append-snapshots` | off | Merge new snapshots into the existing `--price-output` file instead of overwriting. Keeps full price history across runs. |
+| `--category-output FILE` | none | Write discovered category names and URLs to this file. |
+
+### Filtering
+
+| Flag | Default | Description |
+|---|---|---|
+| `--limit N` | `20` | Maximum products to extract per URL. |
+| `--max-pages N` | unlimited | Stop after scraping this many resolved page URLs in total. |
+| `--query TEXT` | none | Keep only products whose name contains this string (case-insensitive). |
+| `--dedupe` | off | Remove duplicate products by `product_key` across all URLs. When a duplicate is found, the entry with an image is preferred. |
+
+### Category discovery and pagination
+
+| Flag | Default | Description |
+|---|---|---|
+| `--discover-category-urls` | off | Fetch each `--url` first and extract category links from it before scraping products. Uses `--category-link-selector`. |
+| `--category-link-selector` | `a._7zlpdd._7zlpdc` | CSS selector for category anchor elements during discovery. |
+| `--category-name-selector` | `button._7zlpdc` | CSS selector for category name buttons — used for logging discovered names. |
+| `--crawl-category-pages` | off | For each category URL, fetch page 1 and auto-discover all `?pg=N` pagination pages, then scrape them all. |
+| `--categories-only` | off | Exit after saving discovered categories to `--category-output`. No products are scraped. |
+
+### Resume and progress
+
+| Flag | Default | Description |
+|---|---|---|
+| `--progress-file FILE` | `scrape_progress.json` | Path to the JSON file used to persist completed URLs between runs. |
+| `--resume` | off | Skip URLs already recorded in `--progress-file`. Enables crash recovery — when combined with `--flush-every-url`, a restart continues from the last completed URL. |
+| `--flush-every-url` | off | Write `--output` and `--price-output` after every single URL instead of only at the end. Prevents data loss if the run is interrupted. |
+
+### Request timing
+
+| Flag | Default | Description |
+|---|---|---|
+| `--initial-delay-seconds N` | `0.0` | Wait this many seconds before the very first request. Useful to stagger parallel GitHub Actions runs. |
+| `--delay-seconds N` | `3.0` | Fixed delay between consecutive requests. Increase to reduce Cloudflare rate-limiting risk. |
+| `--delay-jitter-seconds N` | `1.0` | Random extra delay added on top of `--delay-seconds` per request (uniformly sampled from `0..N`). Prevents rhythmic request patterns. |
+| `--scrapingbee-wait-ms N` | `3000` | **Deprecated** — use `--render-wait-ms` instead. Kept for backward compatibility. |
+
+### Resilience and retries
+
+The scraper distinguishes two error categories with independent retry budgets and exponential backoff.
+
+**Transient errors** — network-level failures (timeout, connection reset, refused, EOF, empty HTML response). These are URL-specific; exhausting retries skips the URL and continues the run.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--max-retries N` | `3` | Maximum retry attempts per URL on transient errors. |
+| `--retry-base-delay-seconds N` | `5.0` | Base delay for the first transient retry. Subsequent retries use exponential backoff: `min(base × 2^attempt, max) × jitter`. |
+| `--retry-max-delay-seconds N` | `120.0` | Maximum backoff cap for transient retries. |
+
+**Rate-limit errors** — Cloudflare Error 1015 / HTTP 429. These indicate the whole session is throttled; exhausting retries aborts the run and saves partial results.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--max-rate-limit-retries N` | `0` | Maximum retry attempts when a rate-limit response is received. `0` means abort immediately. |
+| `--rate-limit-wait-seconds N` | `300` | Base delay for the first rate-limit retry. Subsequent retries use exponential backoff. |
+| `--rate-limit-max-delay-seconds N` | `600` | Maximum backoff cap for rate-limit retries. |
+
+**Backoff formula** (both error types):
+
+```
+delay = min(base × 2^attempt, max) × uniform(0.75, 1.25)
+```
+
+The ±25% jitter prevents multiple workers from retrying in sync.
+
+---
+
+## GitHub Actions
+
+The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC and can be triggered manually from the Actions tab.
+
+### Required secret
+
+Set `SCRAPINGBEE_API_KEY` in **Repository Settings → Secrets and variables → Actions**.
+
+### Manual trigger inputs
+
+| Input | Default | Description |
+|---|---|---|
+| `url` | fruit-and-vegetables page | Category URL to scrape. |
+| `limit` | `20` | Max products per page URL. |
+| `max_pages` | `3` | Max resolved page URLs to scrape in total. |
+
+### Artifacts uploaded per run
+
+- `products.json`
+- `price_snapshots.json`
+- `scrape_progress.json`
+
+Retention: 7 days.
+
+### Resume across re-runs
+
+The workflow enables `--resume` and `--flush-every-url`. If a run is interrupted or times out, re-triggering the same workflow will read `scrape_progress.json` from the previous artifact and skip already-completed URLs — **as long as you restore the progress file before the next run**. The simplest approach is to commit `scrape_progress.json` to the repository after each successful run, or upload and download it as a persistent cache artifact.
+
+---
+
+## Compatibility flags (ignored in ScrapingBee mode)
+
+These flags exist to keep CLI compatibility with the archive Playwright scraper. They are accepted but have no effect.
+
+`--headed`, `--headless-only`, `--manual-wait-seconds`, `--storage-state`, `--wait-for-selector`, `--choose-store`, `--scrape-all-stores`, `--max-stores`, `--store-name`, `--store-names`, `--store-index`, `--store-ribbon-button-selector`, `--store-change-link-selector`, `--store-bar-selector`

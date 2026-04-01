@@ -14,7 +14,7 @@ echo ""
 
 # Test with improved scraper
 echo "Testing improved scraper with better price parsing..."
-python3 scraper_scrapingbee_newworld.py \
+python3 scraper.py \
     --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
     --limit 20 \
     --output improved_products.json \
