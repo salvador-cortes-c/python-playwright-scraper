@@ -16,6 +16,10 @@ on:
         description: 'Max products to scrape'
         required: false
         default: '20'
+      max_pages:
+        description: 'Max resolved pages to scrape'
+        required: false
+        default: '3'
 
 jobs:
   scrape:
@@ -38,7 +42,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install aiohttp beautifulsoup4 requests
+          pip install -r requirements.txt
       
       # Run ScrapingBee scraper
       - name: Run ScrapingBee scraper
@@ -48,10 +52,12 @@ jobs:
           # Use input parameters if provided, otherwise use defaults
           URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
           LIMIT="${{ github.event.inputs.limit || '20' }}"
+          MAX_PAGES="${{ github.event.inputs.max_pages || '3' }}"
           
           echo "Running ScrapingBee scraper..."
           echo "URL: $URL"
           echo "Limit: $LIMIT"
+          echo "Max pages: $MAX_PAGES"
           
           if [ -z "$SCRAPINGBEE_API_KEY" ]; then
             echo "❌ ERROR: SCRAPINGBEE_API_KEY secret not set"
@@ -67,7 +73,16 @@ jobs:
           python scraper_scrapingbee_newworld.py \
             --url "$URL" \
             --limit "$LIMIT" \
+            --crawl-category-pages \
+            --max-pages "$MAX_PAGES" \
+            --dedupe \
             --output products.json \
+            --price-output price_snapshots.json \
+            --progress-file scrape_progress.json \
+            --append-snapshots \
+            --flush-every-url \
+            --max-rate-limit-retries 1 \
+            --rate-limit-wait-seconds 120 \
             --delay-seconds 3
       
       # Upload scraped data as artifact
@@ -77,6 +92,8 @@ jobs:
           name: scrape-results-scrapingbee
           path: |
             products.json
+            price_snapshots.json
+            scrape_progress.json
           retention-days: 7
       
       # Create a summary of what was scraped
@@ -89,13 +106,17 @@ jobs:
           if [ -f "products.json" ]; then
             PRODUCT_COUNT=$(jq '. | length' products.json 2>/dev/null || echo "0")
             echo "✅ **Products scraped:** $PRODUCT_COUNT" >> $GITHUB_STEP_SUMMARY
+            if [ -f "price_snapshots.json" ]; then
+              SNAPSHOT_COUNT=$(jq '. | length' price_snapshots.json 2>/dev/null || echo "0")
+              echo "✅ **Price snapshots:** $SNAPSHOT_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
             
             # Show sample product
             if [ "$PRODUCT_COUNT" -gt 0 ]; then
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Sample product:**" >> $GITHUB_STEP_SUMMARY
               echo '```json' >> $GITHUB_STEP_SUMMARY
-              jq '.[0] | {name: .name, price: .price}' products.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not extract sample" >> $GITHUB_STEP_SUMMARY
+              jq '.[0] | {product_key: .product_key, name: .name, packaging_format: .packaging_format}' products.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not extract sample" >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
             fi
           else
