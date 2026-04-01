@@ -271,6 +271,28 @@ The workflow enables `--resume` and `--flush-every-url`. If a run is interrupted
 
 ---
 
+## Minimal Repository Policy
+
+This repository keeps only files required for runtime and CI. Root helper shell scripts were removed to avoid stale tooling and duplicated logic.
+
+Required core files:
+
+- `scraper.py`
+- `requirements.txt`
+- `.github/workflows/scrape_scrapingbee.yml`
+- `.github/workflows/scrape-test.yml`
+
+Local checks without helper scripts:
+
+```bash
+python -m py_compile scraper.py
+python scraper.py --help
+```
+
+If you need ad-hoc local validation, run the scraper directly with the examples in **Quick start** instead of relying on wrapper scripts.
+
+---
+
 ## Compatibility flags (ignored in ScrapingBee mode)
 
 These flags exist to keep CLI compatibility with the archive Playwright scraper. They are accepted but have no effect.
