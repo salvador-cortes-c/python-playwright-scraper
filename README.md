@@ -90,15 +90,16 @@ python scraper.py \
   --output milk_products.json
 ```
 
-Preflight count only for a full-category crawl:
+Preflight count only — resolve category URLs and print the total without scraping or crawling pagination:
 
 ```bash
 python scraper.py \
   --url "https://www.newworld.co.nz/" \
   --discover-category-urls \
-  --crawl-category-pages \
   --count-only
 ```
+
+> `--crawl-category-pages` is intentionally omitted with `--count-only`. Pagination crawling is skipped automatically when counting to avoid unnecessary API calls.
 
 Scrape a specific store in Playwright mode:
 
@@ -332,6 +333,33 @@ Retention: 7 days.
 ### Resume across re-runs
 
 The workflow enables `--resume` and `--flush-every-url`. If a run is interrupted or times out, re-triggering the same workflow will read `scrape_progress.json` from the previous artifact and skip already-completed URLs — **as long as you restore the progress file before the next run**. The simplest approach is to commit `scrape_progress.json` to the repository after each successful run, or upload and download it as a persistent cache artifact.
+
+---
+
+## Validating changes
+
+### Review a specific commit
+
+```bash
+git show <commit-sha>
+```
+
+### Smoke test locally without API credits
+
+Use `--provider direct` with `--count-only` to verify category discovery and URL resolution without consuming any API quota:
+
+```bash
+python scraper.py \
+  --provider direct \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --count-only \
+  --limit 20
+```
+
+Expected output: a line like `Discovered N category URLs` followed by `Resolved N page URLs to scrape`, then immediate exit — **no** `Discovered X paginated URLs for category:` lines (those only appear during a full scrape run).
+
+Note: `--provider direct` may be blocked by Cloudflare on the live site. Use `--provider scrapingbee` (with API key) for a reliable remote test.
 
 ---
 
