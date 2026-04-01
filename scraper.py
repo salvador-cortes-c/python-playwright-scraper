@@ -874,7 +874,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             )
                             expanded_urls = [input_url]
 
-                    if args.crawl_category_pages:
+                    if args.crawl_category_pages and not args.count_only:
                         paginated_urls: list[str] = []
                         for category_url in expanded_urls:
                             try:
@@ -1593,7 +1593,7 @@ async def main() -> None:
                         )
                         expanded_urls = [input_url]
 
-                if args.crawl_category_pages:
+                if args.crawl_category_pages and not args.count_only:
                     paginated_urls: list[str] = []
                     for category_url in expanded_urls:
                         try:

@@ -105,7 +105,6 @@ jobs:
             --provider "$PROVIDER"
             --url "$URL"
             --limit "$LIMIT"
-            --crawl-category-pages
             --max-pages "$MAX_PAGES"
             --dedupe
             --output products.json
@@ -125,6 +124,10 @@ jobs:
 
           if [ "$DISCOVER_CATEGORY_URLS" = "true" ]; then
             CMD+=(--discover-category-urls)
+          fi
+
+          if [ "$COUNT_ONLY" != "true" ]; then
+            CMD+=(--crawl-category-pages)
           fi
 
           if [ "$COUNT_ONLY" = "true" ]; then
