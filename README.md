@@ -1,6 +1,6 @@
 # New World Scraper
 
-Scrapes product names, prices, unit prices, promo prices, and images from New World category pages. Supports multiple scraping service providers (ScrapingBee, ScraperAPI, Crawlbase, Zenrows, or direct HTTP), full category crawling, pagination discovery, price history snapshots, resume-on-crash, and exponential-backoff retries.
+Scrapes product names, prices, unit prices, promo prices, and images from New World category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, Zenrows, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
 
 ## Setup
 
@@ -9,6 +9,13 @@ cd python-playwright-scraper
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Optional Playwright prerequisites:
+
+```bash
+python -m playwright install firefox
+python -m playwright install-deps firefox
 ```
 
 Export your API key for the chosen provider (default: ScrapingBee):
@@ -83,6 +90,32 @@ python scraper.py \
   --output milk_products.json
 ```
 
+Preflight count only for a full-category crawl:
+
+```bash
+python scraper.py \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --crawl-category-pages \
+  --count-only
+```
+
+Scrape a specific store in Playwright mode:
+
+```bash
+python scraper.py \
+  --provider playwright \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --crawl-category-pages \
+  --choose-store \
+  --store-name "New World Karori" \
+  --headed \
+  --manual-wait-seconds 60 \
+  --output products.json \
+  --price-output price_snapshots.json
+```
+
 ---
 
 ## Output files
@@ -134,11 +167,11 @@ python scraper.py \
 
 | Flag | Default | Description |
 |---|---|---|
-| `--provider NAME` | `scrapingbee` | Scraping service to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `direct`. |
+| `--provider NAME` | `scrapingbee` | Scraping service/engine to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `direct`, `playwright`. |
 | `--country-code CC` | `nz` | Country code for proxy targeting (e.g. `us`, `gb`, `au`). |
 | `--premium-proxy` / `--no-premium-proxy` | on | Use residential/premium proxies when supported by the provider. |
 | `--render-wait-ms N` | `3000` | Milliseconds to wait for JavaScript rendering (provider-agnostic). Overrides `--scrapingbee-wait-ms` when set. |
-| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPINGBEE_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, or `ZENROWS_API_KEY`. Not required for `--provider direct`. |
+| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPINGBEE_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, or `ZENROWS_API_KEY`. Not required for `--provider direct` or `--provider playwright`. |
 
 ### Authentication
 
@@ -149,6 +182,7 @@ python scraper.py \
 | `crawlbase` | `CRAWLBASE_TOKEN` |
 | `zenrows` | `ZENROWS_API_KEY` |
 | `direct` | *(none required)* |
+| `playwright` | *(none required)* |
 
 ### Product selectors
 
@@ -181,6 +215,7 @@ These CSS selectors are pre-configured for New World and rarely need to change. 
 |---|---|---|
 | `--limit N` | `20` | Maximum products to extract per URL. |
 | `--max-pages N` | unlimited | Stop after scraping this many resolved page URLs in total. |
+| `--count-only` | off | Resolve category/pagination URLs and print the total without scraping product pages. Useful as a preflight check before long runs. |
 | `--query TEXT` | none | Keep only products whose name contains this string (case-insensitive). |
 | `--dedupe` | off | Remove duplicate products by `product_key` across all URLs. When a duplicate is found, the entry with an image is preferred. |
 
@@ -201,6 +236,24 @@ These CSS selectors are pre-configured for New World and rarely need to change. 
 | `--progress-file FILE` | `scrape_progress.json` | Path to the JSON file used to persist completed URLs between runs. |
 | `--resume` | off | Skip URLs already recorded in `--progress-file`. Enables crash recovery — when combined with `--flush-every-url`, a restart continues from the last completed URL. |
 | `--flush-every-url` | off | Write `--output` and `--price-output` after every single URL instead of only at the end. Prevents data loss if the run is interrupted. |
+
+### Playwright store mode
+
+These flags are active only when `--provider playwright` is used.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--choose-store` | off | Select a store before scraping. |
+| `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`. |
+| `--store-names NAME` | none | Scrape only the specified store name(s). May be repeated or comma-separated. |
+| `--scrape-all-stores` | off | Iterate through all discovered stores and scrape the same URLs for each one. |
+| `--max-stores N` | unlimited | Optional cap when using `--scrape-all-stores`. |
+| `--store-index N` | `0` | Fallback 0-based option index if no store name is supplied. |
+| `--headed` | off | Launch Firefox with a visible window. Recommended for manual Cloudflare/store verification. |
+| `--headless-only` | off | Force Playwright to stay headless. |
+| `--manual-wait-seconds N` | `0` | Wait after page load so you can complete challenge/store interactions manually. |
+| `--storage-state FILE` | `storage_state.json` | Persist and reuse cookies/local storage between runs. |
+| `--wait-for-selector SEL` | none | Wait for a selector before scraping each page. |
 
 ### Request timing
 
@@ -247,15 +300,26 @@ The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC a
 
 ### Required secret
 
-Set `SCRAPINGBEE_API_KEY` in **Repository Settings → Secrets and variables → Actions**.
+Set the secret matching the provider you plan to use in **Repository Settings → Secrets and variables → Actions**.
+
+- `SCRAPINGBEE_API_KEY`
+- `SCRAPERAPI_KEY`
+- `CRAWLBASE_TOKEN`
+- `ZENROWS_API_KEY`
+
+No secret is needed for `direct` or `playwright` mode.
 
 ### Manual trigger inputs
 
 | Input | Default | Description |
 |---|---|---|
 | `url` | fruit-and-vegetables page | Category URL to scrape. |
+| `provider` | `scrapingbee` | Scraping provider/engine. Use `playwright` for real browser mode. |
 | `limit` | `20` | Max products per page URL. |
 | `max_pages` | `3` | Max resolved page URLs to scrape in total. |
+| `discover_category_urls` | `false` | Start from the given URL, discover category URLs, then crawl each category. |
+| `count_only` | `false` | Only resolve/count URLs; skip scraping products. |
+| `store_name` | empty | Store name for Playwright mode, e.g. `New World Karori`. |
 
 ### Artifacts uploaded per run
 
@@ -293,8 +357,8 @@ If you need ad-hoc local validation, run the scraper directly with the examples 
 
 ---
 
-## Compatibility flags (ignored in ScrapingBee mode)
+## API-Only Note
 
-These flags exist to keep CLI compatibility with the archive Playwright scraper. They are accepted but have no effect.
+When using API-based providers (`scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `direct`), the Playwright-only store/browser flags are accepted by the CLI but have no effect.
 
 `--headed`, `--headless-only`, `--manual-wait-seconds`, `--storage-state`, `--wait-for-selector`, `--choose-store`, `--scrape-all-stores`, `--max-stores`, `--store-name`, `--store-names`, `--store-index`, `--store-ribbon-button-selector`, `--store-change-link-selector`, `--store-bar-selector`

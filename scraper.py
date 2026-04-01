@@ -22,6 +22,13 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 import aiohttp
 from bs4 import BeautifulSoup, Tag
 
+try:
+    from playwright.async_api import async_playwright
+    from playwright_stealth import Stealth
+except ImportError:
+    async_playwright = None
+    Stealth = None
+
 SCRAPINGBEE_API_URL = "https://app.scrapingbee.com/api/v1/"
 SCRAPINGBEE_API_KEY_ENV = "SCRAPINGBEE_API_KEY"
 
@@ -32,6 +39,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "zenrows":     "https://api.zenrows.com/v1/",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
+    "playwright":  "",
     "scrapingbee": "SCRAPINGBEE_API_KEY",
     "scraperapi":  "SCRAPERAPI_KEY",
     "crawlbase":   "CRAWLBASE_TOKEN",
@@ -318,6 +326,17 @@ def write_price_snapshots(output_path: Path, snapshots: list[ProductPriceSnapsho
     output_path.write_text(json.dumps([asdict(snapshot) for snapshot in snapshots], indent=2), encoding="utf-8")
 
 
+def write_category_links(output_path: Path, categories: list[CategoryLink]) -> None:
+    unique_categories: list[CategoryLink] = []
+    seen_category_urls: set[str] = set()
+    for category in categories:
+        if category.url in seen_category_urls:
+            continue
+        seen_category_urls.add(category.url)
+        unique_categories.append(category)
+    output_path.write_text(json.dumps([asdict(category) for category in unique_categories], indent=2), encoding="utf-8")
+
+
 def load_price_snapshots(path: Path) -> list[ProductPriceSnapshot]:
     if not path.exists():
         return []
@@ -558,6 +577,469 @@ def discover_category_urls_from_html(
     return categories
 
 
+def _playwright_is_ready() -> bool:
+    return async_playwright is not None and Stealth is not None
+
+
+def _ensure_playwright_available() -> None:
+    if _playwright_is_ready():
+        return
+    raise RuntimeError(
+        "Playwright mode requires additional dependencies. Install them with: "
+        "pip install playwright-stealth && python -m playwright install firefox"
+    )
+
+
+def _normalize_store_names(raw_values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    if not raw_values:
+        return normalized
+    for entry in raw_values:
+        if not entry:
+            continue
+        parts = [part.strip() for part in str(entry).split(",")]
+        normalized.extend([part for part in parts if part])
+    return normalized
+
+
+async def _playwright_navigate(
+    page: Any,
+    url: str,
+    args: argparse.Namespace,
+    purpose: str,
+) -> None:
+    response = await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    title = _clean_text(await page.title()).lower()
+    body_preview = _clean_text((await page.locator("body").inner_text())[:1200]).lower()
+    response_status = response.status if response else None
+
+    if _is_rate_limited(response_status, title, body_preview):
+        raise RateLimitError(f"Cloudflare rate limit detected while {purpose} (Error 1015/429).")
+
+    challenge_detected = _is_bot_challenge(response_status, title, body_preview)
+    if challenge_detected and args.manual_wait_seconds > 0:
+        print(
+            f"Bot challenge detected while {purpose}. Waiting {args.manual_wait_seconds}s for manual verification..."
+        )
+        await page.wait_for_timeout(max(0, int(args.manual_wait_seconds)) * 1000)
+
+    if challenge_detected and not args.headed:
+        raise RuntimeError(
+            "Target page returned a bot challenge (Cloudflare). "
+            "Re-run with --provider playwright --headed --manual-wait-seconds 60."
+        )
+
+
+async def choose_store_playwright(
+    page: Any,
+    start_url: str,
+    args: argparse.Namespace,
+    store_name: str | None,
+    store_index: int,
+) -> str:
+    await _playwright_navigate(page, start_url, args, "choosing store")
+
+    await page.click(args.store_ribbon_button_selector, timeout=30000)
+    try:
+        await page.locator(args.store_change_link_selector).click(timeout=15000, force=True)
+    except Exception:
+        try:
+            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
+        except Exception:
+            href = await page.locator(args.store_change_link_selector).get_attribute("href")
+            if not href:
+                raise
+            await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
+
+    await page.wait_for_load_state("domcontentloaded")
+    await page.click(args.store_bar_selector, timeout=30000)
+    await page.wait_for_timeout(300)
+
+    if store_name:
+        normalized_target = " ".join(store_name.split()).strip().removesuffix(" Store details").strip()
+        fallback_target = normalized_target.split(",")[0].strip() if "," in normalized_target else normalized_target
+        options = page.locator("[role='option']")
+        for _ in range(80):
+            filtered = options.filter(has_text=normalized_target)
+            if await filtered.count() > 0:
+                await filtered.first.click(timeout=30000)
+                break
+
+            if fallback_target and fallback_target != normalized_target:
+                filtered_fallback = options.filter(has_text=fallback_target)
+                if await filtered_fallback.count() > 0:
+                    await filtered_fallback.first.click(timeout=30000)
+                    break
+
+            await page.keyboard.press("PageDown")
+            await page.wait_for_timeout(150)
+        else:
+            raise RuntimeError(
+                f"Could not find store option matching '{normalized_target}'. "
+                "Try adjusting --store-name or the store selectors."
+            )
+    else:
+        options = page.locator("[role='option']")
+        option_count = await options.count()
+        if option_count <= 0:
+            raise RuntimeError("Could not find any store options after opening the store list.")
+        index = max(0, min(int(store_index), option_count - 1))
+        await options.nth(index).click(timeout=30000)
+
+    await page.wait_for_timeout(1000)
+    selected = await _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
+    if selected:
+        print(f"Selected store: {selected}")
+    return selected
+
+
+async def discover_store_names_playwright(page: Any, start_url: str, args: argparse.Namespace) -> list[str]:
+    await _playwright_navigate(page, start_url, args, "discovering stores")
+
+    await page.click(args.store_ribbon_button_selector, timeout=30000)
+    try:
+        await page.locator(args.store_change_link_selector).click(timeout=15000, force=True)
+    except Exception:
+        try:
+            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
+        except Exception:
+            href = await page.locator(args.store_change_link_selector).get_attribute("href")
+            if not href:
+                raise
+            await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
+
+    await page.wait_for_load_state("domcontentloaded")
+    await page.click(args.store_bar_selector, timeout=30000)
+    await page.wait_for_timeout(400)
+
+    options = page.locator("[role='option']")
+    seen: set[str] = set()
+    stagnation = 0
+    last_count = 0
+    last_seen_size = 0
+    for _ in range(60):
+        count = await options.count()
+        for index in range(count):
+            text = _clean_text(await options.nth(index).inner_text())
+            if text:
+                seen.add(text)
+        await page.keyboard.press("PageDown")
+        await page.wait_for_timeout(250)
+        if count == last_count and len(seen) == last_seen_size:
+            stagnation += 1
+        else:
+            stagnation = 0
+        last_count = count
+        last_seen_size = len(seen)
+        if stagnation >= 6:
+            break
+    return sorted(seen)
+
+
+async def discover_category_urls_playwright(
+    page: Any,
+    start_url: str,
+    category_link_selector: str,
+    category_name_selector: str,
+    args: argparse.Namespace,
+) -> list[CategoryLink]:
+    await _playwright_navigate(page, start_url, args, "discovering category URLs")
+    html = await page.content()
+    return discover_category_urls_from_html(
+        start_url=start_url,
+        html=html,
+        category_link_selector=category_link_selector,
+        category_name_selector=category_name_selector,
+    )
+
+
+async def discover_category_page_urls_playwright(
+    page: Any,
+    start_url: str,
+    args: argparse.Namespace,
+) -> list[str]:
+    await _playwright_navigate(page, start_url, args, "discovering paginated category URLs")
+    html = await page.content()
+    return discover_category_page_urls_from_html(start_url=start_url, html=html)
+
+
+async def scrape_url_playwright(
+    page: Any,
+    url: str,
+    args: argparse.Namespace,
+) -> tuple[list[Product], list[ProductPriceSnapshot]]:
+    await _playwright_navigate(page, url, args, f"scraping {url}")
+    if args.wait_for_selector:
+        await page.wait_for_selector(args.wait_for_selector)
+    html = await page.content()
+    return scrape_products_from_html(
+        html=html,
+        url=url,
+        product_selector=args.product_selector,
+        name_selector=args.name_selector,
+        price_selector=args.price_selector,
+        price_cents_selector=args.price_cents_selector,
+        unit_price_selector=args.unit_price_selector,
+        promo_price_dollars_selector=args.promo_price_dollars_selector,
+        promo_price_cents_selector=args.promo_price_cents_selector,
+        promo_unit_price_selector=args.promo_unit_price_selector,
+        image_selector=args.image_selector,
+        limit=max(1, int(args.limit)),
+        query=args.query,
+    )
+
+
+async def run_playwright_mode(args: argparse.Namespace) -> None:
+    _ensure_playwright_available()
+
+    store_names_to_scrape = _normalize_store_names(args.store_names)
+    if store_names_to_scrape and args.scrape_all_stores:
+        raise SystemExit("Do not combine --store-names with --scrape-all-stores. Use one or the other.")
+
+    if args.headless_only:
+        args.headed = False
+
+    progress_path = Path(args.progress_file)
+    output_path = Path(args.output)
+    price_output_path = Path(args.price_output)
+    progress = load_progress(progress_path)
+    all_products: list[Product] = []
+    all_snapshots: list[ProductPriceSnapshot] = []
+    discovered_categories_all: list[CategoryLink] = []
+    rate_limit_hit = False
+
+    if args.append_snapshots:
+        all_snapshots = load_price_snapshots(price_output_path)
+
+    if args.initial_delay_seconds > 0:
+        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...")
+        await asyncio.sleep(args.initial_delay_seconds)
+
+    storage_state_path = Path(args.storage_state)
+    try:
+        browser_launcher = async_playwright()
+        async with browser_launcher as playwright:
+            browser = await playwright.firefox.launch(headless=not args.headed)
+            context = await browser.new_context(
+                storage_state=str(storage_state_path) if storage_state_path.exists() else None
+            )
+            page = await context.new_page()
+            await Stealth().apply_stealth_async(page)
+
+            if args.scrape_all_stores:
+                if args.max_stores is not None and int(args.max_stores) > 0:
+                    store_indices: list[int] | None = list(range(int(args.max_stores)))
+                    stores: list[str] = []
+                else:
+                    store_indices = None
+                    stores = await discover_store_names_playwright(page, args.url[0], args)
+                args.resume = False
+            elif store_names_to_scrape:
+                store_indices = None
+                stores = store_names_to_scrape
+                args.resume = False
+            else:
+                store_indices = None
+                stores = []
+
+            if args.choose_store and (not args.scrape_all_stores) and (not store_names_to_scrape):
+                await choose_store_playwright(page, args.url[0], args, args.store_name, args.store_index)
+
+            async def resolve_urls() -> list[str]:
+                resolved_urls: list[str] = []
+                seen_urls: set[str] = set()
+
+                for input_url in args.url:
+                    expanded_urls = [input_url]
+
+                    if args.discover_category_urls:
+                        try:
+                            categories = await discover_category_urls_playwright(
+                                page=page,
+                                start_url=input_url,
+                                category_link_selector=args.category_link_selector,
+                                category_name_selector=args.category_name_selector,
+                                args=args,
+                            )
+                        except RateLimitError as exc:
+                            print(f"WARNING: {exc}")
+                            return []
+                        discovered_categories_all.extend(categories)
+                        expanded_urls = [item.url for item in categories]
+                        print(f"Discovered {len(expanded_urls)} category URLs from: {input_url}")
+                        if not expanded_urls:
+                            print(
+                                "WARNING: No category URLs discovered; falling back to input URL. "
+                                "Check --category-link-selector and --category-name-selector."
+                            )
+                            expanded_urls = [input_url]
+
+                    if args.crawl_category_pages:
+                        paginated_urls: list[str] = []
+                        for category_url in expanded_urls:
+                            try:
+                                pages = await discover_category_page_urls_playwright(page, category_url, args)
+                            except RateLimitError as exc:
+                                print(f"WARNING: {exc}")
+                                return []
+                            except Exception as exc:
+                                print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
+                                pages = [category_url]
+
+                            print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
+                            paginated_urls.extend(pages)
+
+                            if args.delay_seconds > 0:
+                                jitter = max(0.0, float(args.delay_jitter_seconds))
+                                wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
+                                await page.wait_for_timeout(int(wait_seconds * 1000))
+
+                        expanded_urls = paginated_urls
+
+                    for expanded_url in expanded_urls:
+                        if expanded_url in seen_urls:
+                            continue
+                        seen_urls.add(expanded_url)
+                        resolved_urls.append(expanded_url)
+
+                return resolved_urls
+
+            resolved_urls = await resolve_urls()
+            if not resolved_urls and (args.discover_category_urls or args.crawl_category_pages):
+                rate_limit_hit = True
+
+            if args.category_output:
+                category_output_path = Path(args.category_output)
+                write_category_links(category_output_path, discovered_categories_all)
+                print(f"Saved {len({category.url for category in discovered_categories_all})} category URLs to {category_output_path}")
+
+            if args.categories_only:
+                print("Skipping product scraping because --categories-only was set")
+                await context.close()
+                await browser.close()
+                return
+
+            if args.count_only:
+                category_count = len({category.url for category in discovered_categories_all})
+                print(f"Resolved {len(resolved_urls)} page URLs to scrape")
+                if args.discover_category_urls:
+                    print(f"Discovered {category_count} unique category URLs")
+                await context.close()
+                await browser.close()
+                return
+
+            async def scrape_urls_for_current_store(to_scrape: list[str]) -> None:
+                nonlocal rate_limit_hit, all_products, all_snapshots
+
+                completed_set = set(progress.completed_urls) if args.resume else set()
+                targets = [current for current in to_scrape if current not in completed_set]
+                if args.max_pages is not None:
+                    targets = targets[: max(0, int(args.max_pages))]
+                if args.resume:
+                    print(f"Resume enabled: skipping {len(to_scrape) - len(targets)} already-completed URLs")
+
+                for current_url in targets:
+                    print(f"Scraping URL: {current_url}")
+                    rl_attempt = 0
+                    while True:
+                        try:
+                            products, snapshots = await scrape_url_playwright(page=page, url=current_url, args=args)
+                            break
+                        except RateLimitError as exc:
+                            print(f"WARNING: {exc}")
+                            if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
+                                rate_limit_hit = True
+                                products, snapshots = [], []
+                                break
+                            rl_attempt += 1
+                            wait_seconds = max(0, int(args.rate_limit_wait_seconds))
+                            print(f"Waiting {wait_seconds}s then retrying ({rl_attempt}/{args.max_rate_limit_retries})...")
+                            await page.wait_for_timeout(wait_seconds * 1000)
+
+                    if rate_limit_hit:
+                        break
+
+                    all_products.extend(products)
+                    all_snapshots.extend(snapshots)
+
+                    if args.resume:
+                        progress.completed_urls.append(current_url)
+                        save_progress(progress_path, progress)
+
+                    if args.flush_every_url:
+                        write_products(output_path, all_products)
+                        if args.append_snapshots:
+                            write_price_snapshots(
+                                price_output_path,
+                                merge_snapshots(load_price_snapshots(price_output_path), all_snapshots),
+                            )
+                        else:
+                            write_price_snapshots(price_output_path, all_snapshots)
+
+                    await context.storage_state(path=str(storage_state_path))
+
+                    if args.delay_seconds > 0:
+                        jitter = max(0.0, float(args.delay_jitter_seconds))
+                        wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
+                        await page.wait_for_timeout(int(wait_seconds * 1000))
+
+            if args.scrape_all_stores:
+                if store_indices is not None:
+                    for index in store_indices:
+                        print(f"\n=== Store index: {index} ===")
+                        await choose_store_playwright(page, args.url[0], args, None, index)
+                        await scrape_urls_for_current_store(resolved_urls)
+                        if rate_limit_hit:
+                            break
+                else:
+                    for store in stores:
+                        print(f"\n=== Store: {store} ===")
+                        await choose_store_playwright(page, args.url[0], args, store, args.store_index)
+                        await scrape_urls_for_current_store(resolved_urls)
+                        if rate_limit_hit:
+                            break
+            elif store_names_to_scrape:
+                for store in stores:
+                    print(f"\n=== Store: {store} ===")
+                    await choose_store_playwright(page, args.url[0], args, store, args.store_index)
+                    await scrape_urls_for_current_store(resolved_urls)
+                    if rate_limit_hit:
+                        break
+            else:
+                await scrape_urls_for_current_store(resolved_urls)
+
+            await context.close()
+            await browser.close()
+    except Exception:
+        raise
+
+    if args.dedupe:
+        merged: dict[str, Product] = {}
+        merged_order: list[str] = []
+        for product in all_products:
+            key = product.product_key
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = product
+                merged_order.append(key)
+                continue
+            if (not existing.image) and product.image:
+                existing.image = product.image
+        all_products = [merged[key] for key in merged_order]
+
+    write_products(output_path, all_products)
+    if args.append_snapshots:
+        existing = load_price_snapshots(price_output_path)
+        write_price_snapshots(price_output_path, merge_snapshots(existing, all_snapshots))
+    else:
+        write_price_snapshots(price_output_path, all_snapshots)
+
+    print(f"Saved {len(all_products)} products to {output_path}")
+    print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
+    if rate_limit_hit:
+        print("Run stopped early due to rate limiting; partial results were saved.")
+
+
 def scrape_products_from_html(
     html: str,
     url: str,
@@ -751,7 +1233,7 @@ async def fetch_html_or_raise(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Scrape New World products using ScrapingBee")
+    parser = argparse.ArgumentParser(description="Scrape New World products")
     parser.add_argument(
         "--url",
         action="append",
@@ -803,7 +1285,11 @@ async def main() -> None:
         default="[data-testid='product-image']",
         help="CSS selector for product image within card",
     )
-    parser.add_argument("--wait-for-selector", default=None, help="Compatibility flag; not used in ScrapingBee mode")
+    parser.add_argument(
+        "--wait-for-selector",
+        default=None,
+        help="Optional selector to wait for before scraping (Playwright mode only).",
+    )
     parser.add_argument("--query", default=None, help="Optional name filter")
     parser.add_argument("--limit", type=int, default=20, help="Maximum products to return per URL")
     parser.add_argument("--output", default="products.json", help="Output JSON file")
@@ -823,31 +1309,36 @@ async def main() -> None:
         default=None,
         help="Maximum number of resolved URLs (pages) to scrape.",
     )
-    parser.add_argument("--choose-store", action="store_true", help="Compatibility flag; unsupported in ScrapingBee mode")
-    parser.add_argument("--scrape-all-stores", action="store_true", help="Compatibility flag; unsupported in ScrapingBee mode")
-    parser.add_argument("--max-stores", type=int, default=None, help="Compatibility flag; unsupported in ScrapingBee mode")
-    parser.add_argument("--store-name", default=None, help="Compatibility flag; unsupported in ScrapingBee mode")
+    parser.add_argument(
+        "--count-only",
+        action="store_true",
+        help="Resolve category/pagination URLs and print the total without scraping products.",
+    )
+    parser.add_argument("--choose-store", action="store_true", help="Choose a store before scraping (Playwright mode only).")
+    parser.add_argument("--scrape-all-stores", action="store_true", help="Scrape the same URLs across all discovered stores (Playwright mode only).")
+    parser.add_argument("--max-stores", type=int, default=None, help="Optional cap when using --scrape-all-stores in Playwright mode.")
+    parser.add_argument("--store-name", default=None, help="Specific store name to select in Playwright mode.")
     parser.add_argument(
         "--store-names",
         action="append",
         default=None,
-        help="Compatibility flag; unsupported in ScrapingBee mode",
+        help="Specific store name(s) to scrape in Playwright mode. May be repeated or comma-separated.",
     )
-    parser.add_argument("--store-index", type=int, default=0, help="Compatibility flag; unsupported in ScrapingBee mode")
+    parser.add_argument("--store-index", type=int, default=0, help="Fallback store option index in Playwright mode.")
     parser.add_argument(
         "--store-ribbon-button-selector",
         default="#ribbon > div > div._1dmgezfn9._1dmgezf4i._1dmgezf9.svd0ke7 > button",
-        help="Compatibility flag; unsupported in ScrapingBee mode",
+        help="CSS selector for the ribbon store button (Playwright mode only).",
     )
     parser.add_argument(
         "--store-change-link-selector",
         default="#ribbon > div > div._1dmgezfn9._1dmgezf4i._1dmgezf9.svd0ke7 > div._1g0swly0._74qpuq0 > div > div > div._1dmgezfmi._1dmgezf9._1dmgezf19 > a:nth-child(2)",
-        help="Compatibility flag; unsupported in ScrapingBee mode",
+        help="CSS selector for the change-store link (Playwright mode only).",
     )
     parser.add_argument(
         "--store-bar-selector",
         default="#_r_8_",
-        help="Compatibility flag; unsupported in ScrapingBee mode",
+        help="CSS selector for the store search/selection bar (Playwright mode only).",
     )
     parser.add_argument(
         "--crawl-category-pages",
@@ -884,13 +1375,13 @@ async def main() -> None:
         action="store_true",
         help="Remove duplicate products by (name, unit_price) across all URLs",
     )
-    parser.add_argument("--headed", action="store_true", help="Compatibility flag; unsupported in ScrapingBee mode")
-    parser.add_argument("--headless-only", action="store_true", help="Compatibility flag; unsupported in ScrapingBee mode")
+    parser.add_argument("--headed", action="store_true", help="Run Playwright browser in headed mode.")
+    parser.add_argument("--headless-only", action="store_true", help="Force Playwright browser to stay headless.")
     parser.add_argument(
         "--manual-wait-seconds",
         type=int,
         default=0,
-        help="Compatibility flag; unsupported in ScrapingBee mode",
+        help="Manual wait after page load for Cloudflare/store interaction in Playwright mode.",
     )
     parser.add_argument(
         "--delay-seconds",
@@ -964,8 +1455,8 @@ async def main() -> None:
     parser.add_argument(
         "--provider",
         default="scrapingbee",
-        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "direct"],
-        help="Scraping service provider to use (default: scrapingbee).",
+        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "direct", "playwright"],
+        help="Scraping provider/engine to use (default: scrapingbee).",
     )
     parser.add_argument(
         "--country-code",
@@ -988,7 +1479,7 @@ async def main() -> None:
     parser.add_argument(
         "--storage-state",
         default="storage_state.json",
-        help="Compatibility flag; not used in ScrapingBee mode",
+        help="Path to Playwright storage state JSON for cookie reuse (Playwright mode only).",
     )
     parser.add_argument(
         "--api-key",
@@ -1005,6 +1496,10 @@ async def main() -> None:
     args = parser.parse_args()
 
     provider_name: str = args.provider
+    if provider_name == "playwright":
+        await run_playwright_mode(args)
+        return
+
     env_var = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
     api_key: str | None = args.api_key or (os.getenv(env_var) if env_var else None)
     render_wait_ms: int = (
@@ -1038,8 +1533,8 @@ async def main() -> None:
     )
     if unsupported_flags_used:
         print(
-            "WARNING: Store interaction and browser-only challenge handling flags are not supported in "
-            "ScrapingBee mode and will be ignored."
+            "WARNING: Store interaction and browser-only flags are only supported in --provider playwright "
+            "and will be ignored for API-based providers."
         )
 
     progress_path = Path(args.progress_file)
@@ -1139,19 +1634,19 @@ async def main() -> None:
 
         if args.categories_only:
             category_output_path = Path(args.category_output or "category_urls.json")
-            unique_categories: list[CategoryLink] = []
-            seen_category_urls: set[str] = set()
-            for category in discovered_categories_all:
-                if category.url in seen_category_urls:
-                    continue
-                seen_category_urls.add(category.url)
-                unique_categories.append(category)
-            category_output_path.write_text(
-                json.dumps([asdict(category) for category in unique_categories], indent=2),
-                encoding="utf-8",
-            )
-            print(f"Saved {len(unique_categories)} category URLs to {category_output_path}")
+            write_category_links(category_output_path, discovered_categories_all)
+            print(f"Saved {len({category.url for category in discovered_categories_all})} category URLs to {category_output_path}")
             print("Skipping product scraping because --categories-only was set")
+            return
+
+        if args.count_only:
+            if args.category_output:
+                category_output_path = Path(args.category_output)
+                write_category_links(category_output_path, discovered_categories_all)
+                print(f"Saved {len({category.url for category in discovered_categories_all})} category URLs to {category_output_path}")
+            print(f"Resolved {len(resolved_urls)} page URLs to scrape")
+            if args.discover_category_urls:
+                print(f"Discovered {len({category.url for category in discovered_categories_all})} unique category URLs")
             return
 
         completed_set = set(progress.completed_urls) if args.resume else set()
@@ -1253,18 +1748,8 @@ async def main() -> None:
 
     if args.category_output:
         category_output_path = Path(args.category_output)
-        unique_categories: list[CategoryLink] = []
-        seen_category_urls: set[str] = set()
-        for category in discovered_categories_all:
-            if category.url in seen_category_urls:
-                continue
-            seen_category_urls.add(category.url)
-            unique_categories.append(category)
-        category_output_path.write_text(
-            json.dumps([asdict(category) for category in unique_categories], indent=2),
-            encoding="utf-8",
-        )
-        print(f"Saved {len(unique_categories)} category URLs to {category_output_path}")
+        write_category_links(category_output_path, discovered_categories_all)
+        print(f"Saved {len({category.url for category in discovered_categories_all})} category URLs to {category_output_path}")
 
     write_products(output_path, all_products)
     if args.append_snapshots:
