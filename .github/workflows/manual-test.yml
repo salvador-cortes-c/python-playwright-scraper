@@ -83,8 +83,8 @@ jobs:
           stores='${{ steps.count_stores.outputs.store_count }}'
           categories='${{ steps.count_category_pages.outputs.category_count }}'
           pages='${{ steps.count_category_pages.outputs.total_pages }}'
-          total=$((stores * categories * pages))
+          total=$((stores * pages))
           echo "Stores: $stores"
           echo "Categories: $categories"
           echo "Pages: $pages"
-          echo "Total multiplied amount (stores * categories * pages): $total"
+          echo "Total multiplied amount (stores * pages): $total"
