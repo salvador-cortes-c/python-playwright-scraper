@@ -130,8 +130,9 @@ Count the number of available stores from the fulfillment page:
 
 ```bash
 python scraper.py \
-  --provider playwright \
+  --provider scrapingbee \
   --url "https://www.newworld.co.nz/shop/fulfillment" \
+  --render-wait-ms 8000 \
   --count-stores
 ```
 
@@ -296,7 +297,7 @@ These flags are active only when `--provider playwright` is used.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Useful for store enumeration preflight checks. |
+| `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Works with provider mode (recommended: `scrapingbee` with higher `--render-wait-ms`) and Playwright mode. |
 | `--choose-store` | off | Select a store before scraping. |
 | `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`. |
 | `--store-names NAME` | none | Scrape only the specified store name(s). May be repeated or comma-separated. |
@@ -362,6 +363,8 @@ How to run:
 2. Select **Count Stores and Categories (Manual)**.
 3. Click **Run workflow**.
 4. Use branch `main` and confirm.
+
+This workflow uses ScrapingBee, so ensure repository secret `SCRAPING_PROVIDER_API_KEY` is set.
 
 Outputs:
 

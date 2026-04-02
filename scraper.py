@@ -615,6 +615,38 @@ def discover_category_urls_from_html(
     return categories
 
 
+def discover_store_names_from_html(html: str) -> list[str]:
+    """Best-effort store name extraction from rendered HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    candidates: set[str] = set()
+
+    for node in soup.select("[role='option']"):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if text:
+            candidates.add(text.removesuffix(" Store details").strip())
+
+    for node in soup.find_all(string=re.compile(r"Store details", re.IGNORECASE)):
+        text = _clean_text(str(node))
+        if not text:
+            continue
+        cleaned = re.sub(r"\s*Store details\s*$", "", text, flags=re.IGNORECASE).strip()
+        if cleaned:
+            candidates.add(cleaned)
+
+    filtered = sorted(
+        {
+            name
+            for name in candidates
+            if len(name) >= 4
+            and "choose" not in name.lower()
+            and "search" not in name.lower()
+            and "current" not in name.lower()
+        }
+    )
+    return filtered
+
+
 def _playwright_is_ready() -> bool:
     return async_playwright is not None and Stealth is not None
 
@@ -1423,7 +1455,7 @@ async def main() -> None:
     parser.add_argument(
         "--count-stores",
         action="store_true",
-        help="Count the number of available stores from the fulfillment page (Playwright mode only).",
+        help="Count the number of available stores from the fulfillment page and exit.",
     )
     parser.add_argument("--choose-store", action="store_true", help="Choose a store before scraping (Playwright mode only).")
     parser.add_argument("--scrape-all-stores", action="store_true", help="Scrape the same URLs across all discovered stores (Playwright mode only).")
@@ -1678,7 +1710,26 @@ async def main() -> None:
 
     async with aiohttp.ClientSession() as session:
 
-        async def resolve_urls() -> list[str]:
+        if args.count_stores:
+            try:
+                html = await fetch_html_or_raise(
+                    session=session,
+                    url=args.url[0],
+                    provider=provider,
+                )
+                store_names = discover_store_names_from_html(html)
+                if not store_names:
+                    raise RuntimeError(
+                        "No store options were detected in provider HTML. "
+                        "Try increasing --render-wait-ms (e.g. 8000) or verify provider key/URL."
+                    )
+                print(f"Total number of stores: {len(store_names)}")
+            except Exception as exc:
+                print(f"Error counting stores: {exc}")
+                raise SystemExit(1)
+            return
+
+        async def resolve_urls() -> list[str]: 
             resolved_urls: list[str] = []
             seen_urls: set[str] = set()
 

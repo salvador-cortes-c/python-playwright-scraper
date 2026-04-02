@@ -6,6 +6,8 @@ on:
 jobs:
   count-metrics:
     runs-on: ubuntu-latest
+    env:
+      SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,24 +23,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers
+      - name: Validate ScrapingBee key
         run: |
-          python -m playwright install firefox
-          python -m playwright install-deps firefox
+          if [ -z "${SCRAPING_PROVIDER_API_KEY:-}" ]; then
+            echo "SCRAPING_PROVIDER_API_KEY is not set in repository secrets"
+            exit 1
+          fi
 
-      - name: Count stores
+      - name: Count stores via ScrapingBee
         run: |
           set -euo pipefail
           python scraper.py \
-            --provider playwright \
+            --provider scrapingbee \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
+            --render-wait-ms 8000 \
             --count-stores
 
-      - name: Count categories
+      - name: Count categories via ScrapingBee
         run: |
           set -euo pipefail
           python scraper.py \
-            --provider playwright \
+            --provider scrapingbee \
             --url "https://www.newworld.co.nz/" \
+            --render-wait-ms 8000 \
             --discover-category-urls \
             --count-only
