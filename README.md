@@ -340,6 +340,19 @@ The ±25% jitter prevents multiple workers from retrying in sync.
 
 The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC and can be triggered manually from the Actions tab.
 
+### Scrape test workflow
+
+The workflow `.github/workflows/scrape-test.yml` runs on every push, pull request, and manual trigger.
+
+Its purpose is a fast smoke test of the scraper runtime and CLI compatibility:
+
+- Installs dependencies from `requirements.txt`
+- Verifies `python scraper.py --help` succeeds
+- Runs a direct-provider scrape against `https://httpbin.org/html` with test selectors
+- Confirms output files are created (`test_output.json`, `test_price_snapshots.json`)
+
+This workflow is intentionally lightweight and does not require provider API keys.
+
 ### Required secret
 
 Set the secret matching the provider you plan to use in **Repository Settings → Secrets and variables → Actions**.
