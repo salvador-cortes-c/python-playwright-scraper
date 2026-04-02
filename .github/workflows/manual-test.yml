@@ -2,6 +2,11 @@ name: Count Stores and Categories (Manual)
 
 on:
   workflow_dispatch:
+    inputs:
+      store_city:
+        description: "Optional city filter for stores (e.g. Wellington)"
+        required: false
+        default: ""
 
 jobs:
   count-metrics:
@@ -44,11 +49,18 @@ jobs:
         id: count_stores
         run: |
           set -euo pipefail
+          city='${{ inputs.store_city }}'
+          city_args=()
+          if [ -n "$city" ]; then
+            echo "Applying city filter: $city"
+            city_args=(--store-city "$city")
+          fi
           output=$(python scraper.py \
             --provider scrapingbee \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 12000 \
-            --count-stores)
+            --count-stores \
+            "${city_args[@]}")
           printf '%s\n' "$output"
           store_count=$(printf '%s\n' "$output" | sed -n 's/^Total number of stores: \([0-9][0-9]*\)$/\1/p' | tail -1)
           if [ -z "$store_count" ]; then
@@ -61,12 +73,19 @@ jobs:
         id: count_category_pages
         run: |
           set -euo pipefail
+          city='${{ inputs.store_city }}'
+          city_args=()
+          if [ -n "$city" ]; then
+            echo "Applying city filter: $city"
+            city_args=(--store-city "$city")
+          fi
           output=$(python scraper.py \
             --provider scrapingbee \
             --url "https://www.newworld.co.nz/" \
             --render-wait-ms 8000 \
             --discover-category-urls \
-            --count-category-pages)
+            --count-category-pages \
+            "${city_args[@]}")
           printf '%s\n' "$output"
           category_count=$(printf '%s\n' "$output" | sed -n 's/^Discovered \([0-9][0-9]*\) unique category URLs$/\1/p' | tail -1)
           total_pages=$(printf '%s\n' "$output" | sed -n 's/^Total category pages across all categories: \([0-9][0-9]*\)$/\1/p' | tail -1)
