@@ -354,18 +354,14 @@ The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC a
 
 ### Count workflow (stores + categories)
 
-The workflow `.github/workflows/count_metrics.yml` is a dedicated manual workflow for counting only, without running full product scraping.
+The workflow `.github/workflows/manual-test.yml` is a dedicated manual workflow for counting only, without running full product scraping.
 
 How to run:
 
 1. Open **Actions** in GitHub.
-2. Select **Count Stores and Categories**.
+2. Select **Count Stores and Categories (Manual)**.
 3. Click **Run workflow**.
-4. Keep defaults (or adjust URLs):
-   - `count_stores=true`
-   - `count_categories=true`
-   - `store_count_url=https://www.newworld.co.nz/shop/fulfillment`
-   - `category_count_url=https://www.newworld.co.nz/`
+4. Click **Run workflow** (no extra inputs required).
 
 Outputs:
 
@@ -459,7 +455,7 @@ Required core files:
 
 - `scraper.py`
 - `requirements.txt`
-- `.github/workflows/count_metrics.yml`
+- `.github/workflows/manual-test.yml`
 - `.github/workflows/scrape_scrapingbee.yml`
 - `.github/workflows/scrape-test.yml`
 
