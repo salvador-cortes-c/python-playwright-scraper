@@ -68,7 +68,7 @@ jobs:
       
       - name: Run scraper
         env:
-          SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPINGBEE_API_KEY }}
+          SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           CRAWLBASE_TOKEN: ${{ secrets.CRAWLBASE_TOKEN }}
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
@@ -91,12 +91,12 @@ jobs:
           echo "Store name: ${STORE_NAME:-<none>}"
           
           if [ "$PROVIDER" != "playwright" ] && [ "$PROVIDER" != "direct" ] && [ -z "$SCRAPINGBEE_API_KEY" ] && [ "$PROVIDER" = "scrapingbee" ]; then
-            echo "❌ ERROR: SCRAPINGBEE_API_KEY secret not set"
+            echo "❌ ERROR: SCRAPING_PROVIDER_API_KEY secret not set"
             echo ""
             echo "💡 How to set it:"
             echo "   1. Go to Repository Settings → Secrets and variables → Actions"
             echo "   2. Click 'New repository secret'"
-            echo "   3. Name: SCRAPINGBEE_API_KEY"
+            echo "   3. Name: SCRAPING_PROVIDER_API_KEY"
             echo "   4. Value: Your ScrapingBee API key"
             exit 1
           fi

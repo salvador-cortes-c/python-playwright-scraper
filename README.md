@@ -357,10 +357,12 @@ This workflow is intentionally lightweight and does not require provider API key
 
 Set the secret matching the provider you plan to use in **Repository Settings → Secrets and variables → Actions**.
 
-- `SCRAPINGBEE_API_KEY`
+- `SCRAPING_PROVIDER_API_KEY` (used for ScrapingBee)
 - `SCRAPERAPI_KEY`
 - `CRAWLBASE_TOKEN`
 - `ZENROWS_API_KEY`
+
+Note: the workflow maps `SCRAPING_PROVIDER_API_KEY` into the runtime env var `SCRAPINGBEE_API_KEY`, so scraper code and local CLI usage stay unchanged.
 
 No secret is needed for `direct` or `playwright` mode.
 
