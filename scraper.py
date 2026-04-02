@@ -616,16 +616,44 @@ def discover_category_urls_from_html(
 
 
 def discover_store_names_from_html(html: str) -> list[str]:
-    """Best-effort store name extraction from rendered HTML."""
-    soup = BeautifulSoup(html, "html.parser")
+    """Best-effort store name extraction from rendered HTML.
 
+    Tries, in order:
+    1. Inline JSON from ``__NEXT_DATA__`` script tag (Next.js SSR payload).
+    2. Any ``<script>`` tag whose text contains ``storeName`` or ``store_name``.
+    3. ``[role='option']`` elements (open React-Select dropdown).
+    4. Text nodes containing "Store details" (individual option text).
+    """
+    soup = BeautifulSoup(html, "html.parser")
     candidates: set[str] = set()
 
+    # ── 1 & 2: Inline JSON extraction ────────────────────────────────────────
+    for script_tag in soup.find_all("script"):
+        tag_id = script_tag.get("id") or ""
+        content = script_tag.string or ""
+        if not content:
+            continue
+        is_next_data = tag_id == "__NEXT_DATA__"
+        has_store_hint = is_next_data or bool(
+            re.search(r"storeName|store_name|fulfillmentStore", content, re.IGNORECASE)
+        )
+        if not has_store_hint:
+            continue
+        # Strip optional JS assignment wrapper: ``window.__X__ = {...}``
+        json_text = re.sub(r"^\s*\w[\w.]*\s*=\s*", "", content.strip())
+        try:
+            data = json.loads(json_text)
+            _collect_store_names_from_json(data, candidates)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # ── 3: role=option (open dropdown) ───────────────────────────────────────
     for node in soup.select("[role='option']"):
         text = _clean_text(node.get_text(" ", strip=True))
         if text:
             candidates.add(text.removesuffix(" Store details").strip())
 
+    # ── 4: "Store details" text nodes ────────────────────────────────────────
     for node in soup.find_all(string=re.compile(r"Store details", re.IGNORECASE)):
         text = _clean_text(str(node))
         if not text:
@@ -646,6 +674,35 @@ def discover_store_names_from_html(html: str) -> list[str]:
     )
     return filtered
 
+
+_STORE_JSON_KEYS = frozenset(
+    {"stores", "storelist", "storeoptions", "availablestores", "fulfillmentstores",
+     "locations", "picklocation", "pickuplocations", "storelocations"}
+)
+_STORE_NAME_KEYS = ("name", "storeName", "store_name", "displayName", "label", "title")
+
+
+def _collect_store_names_from_json(data: Any, out: set[str], depth: int = 0) -> None:
+    """Recursively walk a JSON structure collecting values that look like store names."""
+    if depth > 30:
+        return
+    if isinstance(data, list):
+        for item in data:
+            _collect_store_names_from_json(item, out, depth + 1)
+    elif isinstance(data, dict):
+        for key, val in data.items():
+            # If this key looks like a stores list, harvest names from its items directly.
+            if key.lower() in _STORE_JSON_KEYS and isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict):
+                        for name_key in _STORE_NAME_KEYS:
+                            raw = item.get(name_key)
+                            if isinstance(raw, str) and 4 <= len(raw) <= 80:
+                                if not re.search(r"[/:?#{}$]", raw):
+                                    out.add(raw)
+                                    break
+            else:
+                _collect_store_names_from_json(val, out, depth + 1)
 
 def _playwright_is_ready() -> bool:
     return async_playwright is not None and Stealth is not None
@@ -1717,11 +1774,22 @@ async def main() -> None:
                     url=args.url[0],
                     provider=provider,
                 )
+                _has_role_opt = bool(re.search(r"role=[\"']option", html))
+                _has_store_name = bool(re.search(r"storeName|store_name", html, re.IGNORECASE))
+                _diag = (
+                    f"[diag] HTML length={len(html)} "
+                    f"has_next_data={'__NEXT_DATA__' in html} "
+                    f"has_role_option={_has_role_opt} "
+                    f"has_store_details={'Store details' in html} "
+                    f"has_storeName={_has_store_name}"
+                )
+                print(_diag, flush=True)
                 store_names = discover_store_names_from_html(html)
                 if not store_names:
                     raise RuntimeError(
                         "No store options were detected in provider HTML. "
-                        "Try increasing --render-wait-ms (e.g. 8000) or verify provider key/URL."
+                        "Try increasing --render-wait-ms or verify provider key/URL. "
+                        + _diag
                     )
                 print(f"Total number of stores: {len(store_names)}")
             except Exception as exc:
