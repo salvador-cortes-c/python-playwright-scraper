@@ -348,6 +348,30 @@ The workflow enables `--resume` and `--flush-every-url`. If a run is interrupted
 
 ---
 
+## Validating changes
+
+### Review a specific commit
+
+```bash
+git show <commit-sha>
+```
+
+### Smoke test preflight in Playwright mode
+
+```bash
+python scraper.py \
+  --provider playwright \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --choose-store \
+  --store-name "New World Karori" \
+  --count-only
+```
+
+Expected output: `Discovered N category URLs` and `Resolved N page URLs to scrape`, then exit. In count-only mode, no product scraping happens and `--limit` is not used.
+
+---
+
 ## Minimal Repository Policy
 
 This repository keeps only files required for runtime and CI. Root helper shell scripts were removed to avoid stale tooling and duplicated logic.
