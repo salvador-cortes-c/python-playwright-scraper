@@ -29,45 +29,16 @@ jobs:
             echo "SCRAPING_PROVIDER_API_KEY is not set in repository secrets"
             exit 1
           fi
-    - name: Debug - inspect fulfillment page HTML
-    run: |
-      python3 - <<'PYEOF'
-      import asyncio, aiohttp, os, re, sys
-      async def main():
-        api_key = os.environ.get("SCRAPING_PROVIDER_API_KEY", "")
-        if not api_key:
-          print("No API key - skipping"); return
-        params = {
-          "api_key": api_key,
-          "url": "https://www.newworld.co.nz/shop/fulfillment",
-          "render_js": "true", "premium_proxy": "false",
-          "country_code": "nz", "wait": "10000",
-          "block_ads": "true", "block_resources": "false",
-          "return_page_source": "true",
-        }
-        async with aiohttp.ClientSession() as s:
-          async with s.get("https://app.scrapingbee.com/api/v1/", params=params,
-                   timeout=aiohttp.ClientTimeout(total=120)) as r:
-            html = await r.text()
-        print(f"HTML length: {len(html)}")
-        print(f"has __NEXT_DATA__: {'__NEXT_DATA__' in html}")
-        print(f"has role=option:   {bool(re.search(r'role=[\"\\']option', html))}")
-        print(f"has Store details: {'Store details' in html}")
-        print(f"has storeName:     {bool(re.search(r'storeName|store_name', html, re.IGNORECASE))}")
-        print(f"has Newmarket:     {'Newmarket' in html}")
-        # Print snippet around first interesting pattern
-        for pat in ["Store details", "storeName", "Newmarket"]:
-          m = re.search(pat, html, re.IGNORECASE)
-          if m:
-            s_idx = max(0, m.start() - 120)
-            print(f"\n--- snippet around '{pat}' ---")
-            print(repr(html[s_idx:m.end() + 250]))
-            break
-        # First 1500 chars
-        print("\n--- first 1500 chars ---")
-        print(html[:1500])
-      asyncio.run(main())
-      PYEOF
+
+      - name: Debug - inspect fulfillment page HTML
+        continue-on-error: true
+        run: |
+          python scraper.py \
+            --provider scrapingbee \
+            --url "https://www.newworld.co.nz/shop/fulfillment" \
+            --render-wait-ms 10000 \
+            --count-stores \
+            || true
 
       - name: Count stores via ScrapingBee
         run: |
