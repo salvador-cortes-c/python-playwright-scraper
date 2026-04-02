@@ -1,0 +1,122 @@
+name: Count Stores and Categories
+
+on:
+  workflow_dispatch:
+    inputs:
+      count_stores:
+        description: "Count number of stores from fulfillment page"
+        required: false
+        default: "true"
+      count_categories:
+        description: "Count number of categories from home page"
+        required: false
+        default: "true"
+      store_count_url:
+        description: "URL used for store counting"
+        required: false
+        default: "https://www.newworld.co.nz/shop/fulfillment"
+      category_count_url:
+        description: "URL used for category counting"
+        required: false
+        default: "https://www.newworld.co.nz/"
+
+jobs:
+  count-metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install firefox
+          python -m playwright install-deps firefox
+
+      - name: Count stores and categories
+        run: |
+          set -euo pipefail
+
+          COUNT_STORES="${{ github.event.inputs.count_stores || 'true' }}"
+          COUNT_CATEGORIES="${{ github.event.inputs.count_categories || 'true' }}"
+          STORE_COUNT_URL="${{ github.event.inputs.store_count_url || 'https://www.newworld.co.nz/shop/fulfillment' }}"
+          CATEGORY_COUNT_URL="${{ github.event.inputs.category_count_url || 'https://www.newworld.co.nz/' }}"
+
+          STORE_COUNT=0
+          CATEGORY_COUNT=0
+
+          if [ "$COUNT_STORES" = "true" ]; then
+            python scraper.py \
+              --provider playwright \
+              --url "$STORE_COUNT_URL" \
+              --count-stores | tee store_count.log
+            STORE_COUNT=$(awk -F': ' '/^Total number of stores:/{print $2}' store_count.log | tail -n 1)
+            STORE_COUNT=${STORE_COUNT:-0}
+          fi
+
+          if [ "$COUNT_CATEGORIES" = "true" ]; then
+            python scraper.py \
+              --provider playwright \
+              --url "$CATEGORY_COUNT_URL" \
+              --discover-category-urls \
+              --count-only | tee category_count.log
+            CATEGORY_COUNT=$(awk '/^Discovered [0-9]+ unique category URLs$/{print $2}' category_count.log | tail -n 1)
+            CATEGORY_COUNT=${CATEGORY_COUNT:-0}
+          fi
+
+          cat > counts.json <<EOF
+          {
+            "stores": ${STORE_COUNT},
+            "categories": ${CATEGORY_COUNT}
+          }
+          EOF
+
+          echo "Counts generated:"
+          cat counts.json
+
+      - name: Upload count artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: count-metrics
+          path: |
+            counts.json
+            store_count.log
+            category_count.log
+          retention-days: 7
+
+      - name: Create count summary
+        if: always()
+        run: |
+          echo "## Count Metrics" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f "counts.json" ]; then
+            STORE_COUNT=$(python - <<'PY'
+import json
+from pathlib import Path
+print(json.loads(Path('counts.json').read_text()).get('stores', 0))
+PY
+)
+            CATEGORY_COUNT=$(python - <<'PY'
+import json
+from pathlib import Path
+print(json.loads(Path('counts.json').read_text()).get('categories', 0))
+PY
+)
+            echo "🏬 **Stores counted:** $STORE_COUNT" >> "$GITHUB_STEP_SUMMARY"
+            echo "🧺 **Categories counted:** $CATEGORY_COUNT" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ counts.json was not created." >> "$GITHUB_STEP_SUMMARY"
+          fi
