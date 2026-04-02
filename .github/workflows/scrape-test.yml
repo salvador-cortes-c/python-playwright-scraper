@@ -10,75 +10,30 @@ name: Test Scraper
   workflow_dispatch:
 
 jobs:
-  test-scrape:
+  smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
+    timeout-minutes: 20
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          # Install audio library (try t64 version first)
-          sudo apt-get install -y libasound2t64 libasound2 || true
-          
-          # Install other dependencies
-          sudo apt-get install -y \
-            libgtk-3-0 \
-            libdbus-glib-1-2 \
-            libxt6 \
-            libx11-xcb1 \
-            libdrm2 \
-            libxkbcommon0 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxrandr2 \
-            libgbm1 \
-            libpango-1.0-0 \
-            libcairo2
-      - name: Install Python dependencies
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install playwright-stealth
-      
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install firefox
-          python -m playwright install-deps firefox
-      
-      - name: Test scraper with example.com (simple test)
-        run: |
-          # First, let's test if Playwright works
-          python -c "
-import asyncio
-from playwright.async_api import async_playwright
 
-async def test():
-    async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto('https://example.com')
-        title = await page.title()
-        print(f'Success! Page title: {title}')
-        await browser.close()
+      - name: Check scraper help
+        run: python scraper.py --help
 
-asyncio.run(test())
-          "
-      
-      - name: Run scraper in headless mode (test with simple site)
-        continue-on-error: true
+      - name: Run direct-provider smoke scrape
         run: |
-          # Test with a simple public API or static site
-          # Using httpbin.org which is a test HTTP request & response service
           python scraper.py \
             --url "https://httpbin.org/html" \
             --provider direct \
@@ -87,17 +42,12 @@ asyncio.run(test())
             --price-selector "p" \
             --image-selector "body" \
             --limit 1 \
-            --headless-only \
             --output test_output.json \
+            --price-output test_price_snapshots.json \
             --delay-seconds 1
-          
-          if [ -f "test_output.json" ]; then
-            echo "✅ Scraper ran successfully"
-            cat test_output.json
-          else
-            echo "⚠️  No output file created (might be expected for test site)"
-          fi
-      
-      - name: Check scraper help
+
+      - name: Verify output files
         run: |
-          python scraper.py --help
+          test -f test_output.json
+          test -f test_price_snapshots.json
+          echo "Scraper smoke test completed"
