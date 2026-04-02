@@ -32,7 +32,7 @@ except ImportError:
     Stealth = None
 
 SCRAPINGBEE_API_URL = "https://app.scrapingbee.com/api/v1/"
-SCRAPINGBEE_API_KEY_ENV = "SCRAPINGBEE_API_KEY"
+SCRAPING_PROVIDER_API_KEY_ENV = "SCRAPING_PROVIDER_API_KEY"
 
 _PROVIDER_ENDPOINTS: dict[str, str] = {
     "scrapingbee": "https://app.scrapingbee.com/api/v1/",
@@ -42,7 +42,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "playwright":  "",
-    "scrapingbee": "SCRAPINGBEE_API_KEY",
+    "scrapingbee": "SCRAPING_PROVIDER_API_KEY",
     "scraperapi":  "SCRAPERAPI_KEY",
     "crawlbase":   "CRAWLBASE_TOKEN",
     "zenrows":     "ZENROWS_API_KEY",
@@ -1534,7 +1534,7 @@ async def main() -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPINGBEE_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY).",
+        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY).",
     )
     parser.add_argument(
         "--persist-db",

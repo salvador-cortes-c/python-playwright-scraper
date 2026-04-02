@@ -21,7 +21,7 @@ python -m playwright install-deps firefox
 Export your API key for the chosen provider (default: ScrapingBee):
 
 ```bash
-export SCRAPINGBEE_API_KEY="your_key_here"   # ScrapingBee (default)
+export SCRAPING_PROVIDER_API_KEY="your_key_here"   # ScrapingBee (default)
 export SCRAPERAPI_KEY="your_key_here"        # ScraperAPI
 export CRAWLBASE_TOKEN="your_key_here"       # Crawlbase
 export ZENROWS_API_KEY="your_key_here"       # Zenrows
@@ -211,13 +211,13 @@ python scraper.py \
 | `--country-code CC` | `nz` | Country code for proxy targeting (e.g. `us`, `gb`, `au`). |
 | `--premium-proxy` / `--no-premium-proxy` | on | Use residential/premium proxies when supported by the provider. |
 | `--render-wait-ms N` | `3000` | Milliseconds to wait for JavaScript rendering (provider-agnostic). Overrides `--scrapingbee-wait-ms` when set. |
-| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPINGBEE_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, or `ZENROWS_API_KEY`. Not required for `--provider direct` or `--provider playwright`. |
+| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPING_PROVIDER_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, or `ZENROWS_API_KEY`. Not required for `--provider direct` or `--provider playwright`. |
 
 ### Authentication
 
 | Provider | Environment variable |
 |---|---|
-| `scrapingbee` (default) | `SCRAPINGBEE_API_KEY` |
+| `scrapingbee` (default) | `SCRAPING_PROVIDER_API_KEY` |
 | `scraperapi` | `SCRAPERAPI_KEY` |
 | `crawlbase` | `CRAWLBASE_TOKEN` |
 | `zenrows` | `ZENROWS_API_KEY` |
@@ -361,8 +361,6 @@ Set the secret matching the provider you plan to use in **Repository Settings â†
 - `SCRAPERAPI_KEY`
 - `CRAWLBASE_TOKEN`
 - `ZENROWS_API_KEY`
-
-Note: the workflow maps `SCRAPING_PROVIDER_API_KEY` into the runtime env var `SCRAPINGBEE_API_KEY`, so scraper code and local CLI usage stay unchanged.
 
 No secret is needed for `direct` or `playwright` mode.
 

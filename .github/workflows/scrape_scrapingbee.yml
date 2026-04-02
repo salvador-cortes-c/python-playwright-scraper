@@ -68,7 +68,7 @@ jobs:
       
       - name: Run scraper
         env:
-          SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
+          SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           CRAWLBASE_TOKEN: ${{ secrets.CRAWLBASE_TOKEN }}
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
@@ -90,7 +90,7 @@ jobs:
           echo "Count only: $COUNT_ONLY"
           echo "Store name: ${STORE_NAME:-<none>}"
           
-          if [ "$PROVIDER" != "playwright" ] && [ "$PROVIDER" != "direct" ] && [ -z "$SCRAPINGBEE_API_KEY" ] && [ "$PROVIDER" = "scrapingbee" ]; then
+          if [ "$PROVIDER" != "playwright" ] && [ "$PROVIDER" != "direct" ] && [ -z "$SCRAPING_PROVIDER_API_KEY" ] && [ "$PROVIDER" = "scrapingbee" ]; then
             echo "❌ ERROR: SCRAPING_PROVIDER_API_KEY secret not set"
             echo ""
             echo "💡 How to set it:"

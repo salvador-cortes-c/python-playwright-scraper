@@ -17,7 +17,7 @@ import time
 # ScrapingBee API configuration
 SCRAPINGBEE_API_URL = "https://app.scrapingbee.com/api/v1/"
 # Your API key will be loaded from environment variable
-SCRAPINGBEE_API_KEY_ENV = "SCRAPINGBEE_API_KEY"
+SCRAPING_PROVIDER_API_KEY_ENV = "SCRAPING_PROVIDER_API_KEY"
 
 async def fetch_with_scrapingbee(session: aiohttp.ClientSession, url: str, api_key: str) -> Tuple[Optional[str], Optional[Dict]]:
     """
@@ -188,15 +188,15 @@ async def main():
     parser.add_argument('--limit', type=int, default=20, help='Max products to scrape')
     parser.add_argument('--output', default='products.json', help='Output JSON file')
     parser.add_argument('--delay-seconds', type=float, default=2.0, help='Delay between requests')
-    parser.add_argument('--api-key', help='ScrapingBee API key (or use SCRAPINGBEE_API_KEY env var)')
+    parser.add_argument('--api-key', help='ScrapingBee API key (or use SCRAPING_PROVIDER_API_KEY env var)')
     
     args = parser.parse_args()
     
     # Get API key
-    api_key = args.api_key or os.getenv(SCRAPINGBEE_API_KEY_ENV)
+    api_key = args.api_key or os.getenv(SCRAPING_PROVIDER_API_KEY_ENV)
     if not api_key:
         print("❌ Error: ScrapingBee API key required")
-        print("   Set SCRAPINGBEE_API_KEY environment variable or use --api-key")
+        print("   Set SCRAPING_PROVIDER_API_KEY environment variable or use --api-key")
         sys.exit(1)
     
     print(f"Using ScrapingBee API (key: {api_key[:8]}...)")
