@@ -32,6 +32,22 @@ on:
         description: 'Only resolve/count URLs, do not scrape products'
         required: false
         default: 'false'
+      count_stores:
+        description: 'Count number of stores via fulfillment page and exit'
+        required: false
+        default: 'false'
+      count_categories:
+        description: 'Count number of categories from home page and exit'
+        required: false
+        default: 'false'
+      store_count_url:
+        description: 'URL used for store counting'
+        required: false
+        default: 'https://www.newworld.co.nz/shop/fulfillment'
+      category_count_url:
+        description: 'URL used for category counting'
+        required: false
+        default: 'https://www.newworld.co.nz/'
       store_name:
         description: 'Store name for Playwright mode (for example: New World Karori)'
         required: false
@@ -61,7 +77,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ github.event.inputs.provider == 'playwright' }}
+        if: ${{ github.event.inputs.provider == 'playwright' || github.event.inputs.count_stores == 'true' || github.event.inputs.count_categories == 'true' }}
         run: |
           python -m playwright install firefox
           python -m playwright install-deps firefox
@@ -79,6 +95,10 @@ jobs:
           MAX_PAGES="${{ github.event.inputs.max_pages || '3' }}"
           DISCOVER_CATEGORY_URLS="${{ github.event.inputs.discover_category_urls || 'false' }}"
           COUNT_ONLY="${{ github.event.inputs.count_only || 'false' }}"
+          COUNT_STORES="${{ github.event.inputs.count_stores || 'false' }}"
+          COUNT_CATEGORIES="${{ github.event.inputs.count_categories || 'false' }}"
+          STORE_COUNT_URL="${{ github.event.inputs.store_count_url || 'https://www.newworld.co.nz/shop/fulfillment' }}"
+          CATEGORY_COUNT_URL="${{ github.event.inputs.category_count_url || 'https://www.newworld.co.nz/' }}"
           STORE_NAME="${{ github.event.inputs.store_name || '' }}"
           
           echo "Running scraper..."
@@ -88,7 +108,45 @@ jobs:
           echo "Max pages: $MAX_PAGES"
           echo "Discover categories: $DISCOVER_CATEGORY_URLS"
           echo "Count only: $COUNT_ONLY"
+          echo "Count stores: $COUNT_STORES"
+          echo "Count categories: $COUNT_CATEGORIES"
           echo "Store name: ${STORE_NAME:-<none>}"
+
+          if [ "$COUNT_STORES" = "true" ] || [ "$COUNT_CATEGORIES" = "true" ]; then
+            echo "Running counting-only mode"
+            STORE_COUNT=0
+            CATEGORY_COUNT=0
+
+            if [ "$COUNT_STORES" = "true" ]; then
+              python scraper.py \
+                --provider playwright \
+                --url "$STORE_COUNT_URL" \
+                --count-stores | tee /tmp/store_count.log
+              STORE_COUNT=$(awk -F': ' '/^Total number of stores:/{print $2}' /tmp/store_count.log | tail -n 1)
+              STORE_COUNT=${STORE_COUNT:-0}
+            fi
+
+            if [ "$COUNT_CATEGORIES" = "true" ]; then
+              python scraper.py \
+                --provider playwright \
+                --url "$CATEGORY_COUNT_URL" \
+                --discover-category-urls \
+                --count-only | tee /tmp/category_count.log
+              CATEGORY_COUNT=$(awk '/^Discovered [0-9]+ unique category URLs$/{print $2}' /tmp/category_count.log | tail -n 1)
+              CATEGORY_COUNT=${CATEGORY_COUNT:-0}
+            fi
+
+            cat > counts.json <<EOF
+            {
+              "stores": ${STORE_COUNT},
+              "categories": ${CATEGORY_COUNT}
+            }
+            EOF
+
+            echo "Count summary:"
+            cat counts.json
+            exit 0
+          fi
           
           if [ "$PROVIDER" != "playwright" ] && [ "$PROVIDER" != "direct" ] && [ -z "$SCRAPING_PROVIDER_API_KEY" ] && [ "$PROVIDER" = "scrapingbee" ]; then
             echo "❌ ERROR: SCRAPING_PROVIDER_API_KEY secret not set"
@@ -152,6 +210,7 @@ jobs:
             products.json
             price_snapshots.json
             scrape_progress.json
+            counts.json
           retention-days: 7
       
       # Create a summary of what was scraped
@@ -160,6 +219,26 @@ jobs:
         run: |
           echo "## Scraping Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "counts.json" ]; then
+            STORE_COUNT=$(python - <<'PY'
+import json
+from pathlib import Path
+data = json.loads(Path("counts.json").read_text())
+print(data.get("stores", 0))
+PY
+)
+            CATEGORY_COUNT=$(python - <<'PY'
+import json
+from pathlib import Path
+data = json.loads(Path("counts.json").read_text())
+print(data.get("categories", 0))
+PY
+)
+            echo "🏬 **Stores counted:** $STORE_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "🧺 **Categories counted:** $CATEGORY_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
           
           if [ -f "products.json" ]; then
             PRODUCT_COUNT=$(jq '. | length' products.json 2>/dev/null || echo "0")
