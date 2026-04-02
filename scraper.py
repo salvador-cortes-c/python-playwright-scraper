@@ -774,6 +774,50 @@ async def discover_store_names_playwright(page: Any, start_url: str, args: argpa
     return sorted(seen)
 
 
+async def count_stores_playwright(page: Any, start_url: str, args: argparse.Namespace) -> int:
+    """Count the number of stores available on the fulfillment page by clicking the search bar and counting options."""
+    await _playwright_navigate(page, start_url, args, "counting stores")
+
+    await page.click(args.store_ribbon_button_selector, timeout=30000)
+    try:
+        await page.locator(args.store_change_link_selector).click(timeout=15000, force=True)
+    except Exception:
+        try:
+            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
+        except Exception:
+            href = await page.locator(args.store_change_link_selector).get_attribute("href")
+            if not href:
+                raise
+            await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
+
+    await page.wait_for_load_state("domcontentloaded")
+    await page.click(args.store_bar_selector, timeout=30000)
+    await page.wait_for_timeout(400)
+
+    options = page.locator("[role='option']")
+    seen: set[str] = set()
+    stagnation = 0
+    last_count = 0
+    last_seen_size = 0
+    for _ in range(60):
+        count = await options.count()
+        for index in range(count):
+            text = _clean_text(await options.nth(index).inner_text())
+            if text:
+                seen.add(text)
+        await page.keyboard.press("PageDown")
+        await page.wait_for_timeout(250)
+        if count == last_count and len(seen) == last_seen_size:
+            stagnation += 1
+        else:
+            stagnation = 0
+        last_count = count
+        last_seen_size = len(seen)
+        if stagnation >= 6:
+            break
+    return len(seen)
+
+
 async def discover_category_urls_playwright(
     page: Any,
     start_url: str,
@@ -864,6 +908,18 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
             )
             page = await context.new_page()
             await Stealth().apply_stealth_async(page)
+
+            if args.count_stores:
+                try:
+                    store_count = await count_stores_playwright(page, args.url[0], args)
+                    print(f"Total number of stores: {store_count}")
+                except Exception as exc:
+                    print(f"Error counting stores: {exc}")
+                    raise SystemExit(1)
+                finally:
+                    await context.close()
+                    await browser.close()
+                return
 
             if args.scrape_all_stores:
                 if args.max_stores is not None and int(args.max_stores) > 0:
@@ -1363,6 +1419,11 @@ async def main() -> None:
         "--count-only",
         action="store_true",
         help="Resolve category/pagination URLs and print the total without scraping products.",
+    )
+    parser.add_argument(
+        "--count-stores",
+        action="store_true",
+        help="Count the number of available stores from the fulfillment page (Playwright mode only).",
     )
     parser.add_argument("--choose-store", action="store_true", help="Choose a store before scraping (Playwright mode only).")
     parser.add_argument("--scrape-all-stores", action="store_true", help="Scrape the same URLs across all discovered stores (Playwright mode only).")

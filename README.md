@@ -126,6 +126,17 @@ python scraper.py \
   --count-only
 ```
 
+Count the number of available stores from the fulfillment page:
+
+```bash
+python scraper.py \
+  --provider playwright \
+  --url "https://www.newworld.co.nz/shop/fulfillment" \
+  --count-stores
+```
+
+This will output: `Total number of stores: N`
+
 Preflight count only in Playwright mode (store-specific):
 
 ```bash
@@ -285,6 +296,7 @@ These flags are active only when `--provider playwright` is used.
 
 | Flag | Default | Description |
 |---|---|---|
+| `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Useful for store enumeration preflight checks. |
 | `--choose-store` | off | Select a store before scraping. |
 | `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`. |
 | `--store-names NAME` | none | Scrape only the specified store name(s). May be repeated or comma-separated. |
