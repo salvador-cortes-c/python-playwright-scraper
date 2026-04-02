@@ -26,64 +26,19 @@ jobs:
           python -m playwright install firefox
           python -m playwright install-deps firefox
 
-      - name: Count stores and categories
+      - name: Count stores
         run: |
           set -euo pipefail
-
           python scraper.py \
             --provider playwright \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
-            --count-stores | tee store_count.log
-          STORE_COUNT=$(awk -F': ' '/^Total number of stores:/{print $2}' store_count.log | tail -n 1)
-          STORE_COUNT=${STORE_COUNT:-0}
+            --count-stores
 
+      - name: Count categories
+        run: |
+          set -euo pipefail
           python scraper.py \
             --provider playwright \
             --url "https://www.newworld.co.nz/" \
             --discover-category-urls \
-            --count-only | tee category_count.log
-          CATEGORY_COUNT=$(awk '/^Discovered [0-9]+ unique category URLs$/{print $2}' category_count.log | tail -n 1)
-          CATEGORY_COUNT=${CATEGORY_COUNT:-0}
-
-          cat > counts.json <<EOF
-          {
-            "stores": ${STORE_COUNT},
-            "categories": ${CATEGORY_COUNT}
-          }
-          EOF
-
-          echo "Counts generated:"
-          cat counts.json
-
-      - name: Upload count artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: count-metrics
-          path: |
-            counts.json
-            store_count.log
-            category_count.log
-          retention-days: 7
-
-      - name: Add summary
-        if: always()
-        run: |
-          echo "## Count Metrics" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f "counts.json" ]; then
-            STORE_COUNT=$(python - <<'PY'
-import json
-from pathlib import Path
-print(json.loads(Path('counts.json').read_text()).get('stores', 0))
-PY
-)
-            CATEGORY_COUNT=$(python - <<'PY'
-import json
-from pathlib import Path
-print(json.loads(Path('counts.json').read_text()).get('categories', 0))
-PY
-)
-            echo "Stores counted: $STORE_COUNT" >> "$GITHUB_STEP_SUMMARY"
-            echo "Categories counted: $CATEGORY_COUNT" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "counts.json was not created." >> "$GITHUB_STEP_SUMMARY"
-          fi
+            --count-only
