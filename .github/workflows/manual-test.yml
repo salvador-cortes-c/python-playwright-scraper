@@ -1,0 +1,11 @@
+name: Manual Test Trigger
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping
+        run: echo "manual workflow trigger is working"
