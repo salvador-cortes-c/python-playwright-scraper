@@ -361,17 +361,13 @@ How to run:
 1. Open **Actions** in GitHub.
 2. Select **Count Stores and Categories (Manual)**.
 3. Click **Run workflow**.
-4. Click **Run workflow** (no extra inputs required).
+4. Use branch `main` and confirm.
 
 Outputs:
 
-- Workflow summary includes:
-  - `Stores counted: N`
-  - `Categories counted: N`
-- Artifact `count-metrics` includes:
-  - `counts.json`
-  - `store_count.log`
-  - `category_count.log`
+- Job logs include:
+  - `Total number of stores: N`
+  - `Discovered N unique category URLs`
 
 ### Scrape test workflow
 
