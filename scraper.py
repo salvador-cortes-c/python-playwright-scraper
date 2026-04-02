@@ -339,6 +339,33 @@ def write_category_links(output_path: Path, categories: list[CategoryLink]) -> N
     output_path.write_text(json.dumps([asdict(category) for category in unique_categories], indent=2), encoding="utf-8")
 
 
+@dataclass
+class CategoryPageCount:
+    name: str
+    url: str
+    page_count: int
+
+
+def _category_name_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    slug = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+    if not slug:
+        return url
+    return slug.replace("-", " ").replace("_", " ").strip().title() or url
+
+
+def print_category_page_counts(category_page_counts: list[CategoryPageCount]) -> None:
+    if not category_page_counts:
+        print("No category page counts were discovered")
+        return
+
+    total_pages = sum(item.page_count for item in category_page_counts)
+    print("Category page counts:")
+    for item in sorted(category_page_counts, key=lambda current: current.name.lower()):
+        print(f"- {item.name}: {item.page_count} page(s) ({item.url})")
+    print(f"Total category pages across all categories: {total_pages}")
+
+
 def maybe_persist_to_database(
     args: argparse.Namespace,
     *,
@@ -978,6 +1005,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
     all_products: list[Product] = []
     all_snapshots: list[ProductPriceSnapshot] = []
     discovered_categories_all: list[CategoryLink] = []
+    category_page_counts_all: list[CategoryPageCount] = []
     rate_limit_hit = False
 
     if args.append_snapshots:
@@ -1035,6 +1063,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
                 for input_url in args.url:
                     expanded_urls = [input_url]
+                    categories_for_pagination: list[CategoryLink] = [
+                        CategoryLink(
+                            name=_category_name_from_url(input_url),
+                            url=input_url,
+                            source_url=input_url,
+                        )
+                    ]
 
                     if args.discover_category_urls:
                         try:
@@ -1049,6 +1084,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             print(f"WARNING: {exc}")
                             return []
                         discovered_categories_all.extend(categories)
+                        categories_for_pagination = categories or categories_for_pagination
                         expanded_urls = [item.url for item in categories]
                         print(f"Discovered {len(expanded_urls)} category URLs from: {input_url}")
                         if not expanded_urls:
@@ -1058,9 +1094,10 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             )
                             expanded_urls = [input_url]
 
-                    if args.crawl_category_pages and not args.count_only:
+                    if args.crawl_category_pages or args.count_category_pages:
                         paginated_urls: list[str] = []
-                        for category_url in expanded_urls:
+                        for category in categories_for_pagination:
+                            category_url = category.url
                             try:
                                 pages = await discover_category_page_urls_playwright(page, category_url, args)
                             except RateLimitError as exc:
@@ -1071,6 +1108,10 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 pages = [category_url]
 
                             print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
+                            if args.count_category_pages:
+                                category_page_counts_all.append(
+                                    CategoryPageCount(name=category.name, url=category_url, page_count=len(pages))
+                                )
                             paginated_urls.extend(pages)
 
                             if args.delay_seconds > 0:
@@ -1105,6 +1146,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
             if args.count_only:
                 category_count = len({category.url for category in discovered_categories_all})
+                if args.count_category_pages:
+                    print_category_page_counts(category_page_counts_all)
+                    print(
+                        "Count summary: "
+                        f"categories={category_count}, "
+                        f"pages={sum(item.page_count for item in category_page_counts_all)}"
+                    )
                 print(f"Resolved {len(resolved_urls)} page URLs to scrape")
                 if args.discover_category_urls:
                     print(f"Discovered {category_count} unique category URLs")
@@ -1510,6 +1558,11 @@ async def main() -> None:
         help="Resolve category/pagination URLs and print the total without scraping products.",
     )
     parser.add_argument(
+        "--count-category-pages",
+        action="store_true",
+        help="Discover and print the number of paginated pages for each category, then exit.",
+    )
+    parser.add_argument(
         "--count-stores",
         action="store_true",
         help="Count the number of available stores from the fulfillment page and exit.",
@@ -1704,6 +1757,8 @@ async def main() -> None:
     )
 
     args = parser.parse_args()
+    if args.count_category_pages:
+        args.count_only = True
 
     provider_name: str = args.provider
     run_started_at = datetime.now(timezone.utc)
@@ -1756,6 +1811,7 @@ async def main() -> None:
     all_products: list[Product] = []
     all_snapshots: list[ProductPriceSnapshot] = []
     discovered_categories_all: list[CategoryLink] = []
+    category_page_counts_all: list[CategoryPageCount] = []
     rate_limit_hit = False
 
     if args.append_snapshots:
@@ -1803,6 +1859,13 @@ async def main() -> None:
 
             for input_url in args.url:
                 expanded_urls = [input_url]
+                categories_for_pagination: list[CategoryLink] = [
+                    CategoryLink(
+                        name=_category_name_from_url(input_url),
+                        url=input_url,
+                        source_url=input_url,
+                    )
+                ]
 
                 if args.discover_category_urls:
                     try:
@@ -1825,6 +1888,7 @@ async def main() -> None:
                         categories = []
 
                     discovered_categories_all.extend(categories)
+                    categories_for_pagination = categories or categories_for_pagination
                     expanded_urls = [item.url for item in categories]
                     print(f"Discovered {len(expanded_urls)} category URLs from: {input_url}")
                     if not expanded_urls:
@@ -1834,9 +1898,10 @@ async def main() -> None:
                         )
                         expanded_urls = [input_url]
 
-                if args.crawl_category_pages and not args.count_only:
+                if args.crawl_category_pages or args.count_category_pages:
                     paginated_urls: list[str] = []
-                    for category_url in expanded_urls:
+                    for category in categories_for_pagination:
+                        category_url = category.url
                         try:
                             html = await fetch_html_or_raise(
                                 session=session,
@@ -1852,6 +1917,10 @@ async def main() -> None:
                             pages = [category_url]
 
                         print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
+                        if args.count_category_pages:
+                            category_page_counts_all.append(
+                                CategoryPageCount(name=category.name, url=category_url, page_count=len(pages))
+                            )
                         paginated_urls.extend(pages)
 
                         if args.delay_seconds > 0:
@@ -1885,9 +1954,17 @@ async def main() -> None:
                 category_output_path = Path(args.category_output)
                 write_category_links(category_output_path, discovered_categories_all)
                 print(f"Saved {len({category.url for category in discovered_categories_all})} category URLs to {category_output_path}")
+            category_count = len({category.url for category in discovered_categories_all})
+            if args.count_category_pages:
+                print_category_page_counts(category_page_counts_all)
+                print(
+                    "Count summary: "
+                    f"categories={category_count}, "
+                    f"pages={sum(item.page_count for item in category_page_counts_all)}"
+                )
             print(f"Resolved {len(resolved_urls)} page URLs to scrape")
             if args.discover_category_urls:
-                print(f"Discovered {len({category.url for category in discovered_categories_all})} unique category URLs")
+                print(f"Discovered {category_count} unique category URLs")
             return
 
         completed_set = set(progress.completed_urls) if args.resume else set()

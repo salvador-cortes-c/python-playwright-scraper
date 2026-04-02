@@ -126,6 +126,15 @@ python scraper.py \
   --count-only
 ```
 
+Count how many paginated pages each category has without scraping products:
+
+```bash
+python scraper.py \
+  --url "https://www.newworld.co.nz/" \
+  --discover-category-urls \
+  --count-category-pages
+```
+
 Count the number of available stores from the fulfillment page:
 
 ```bash
@@ -270,6 +279,7 @@ These CSS selectors are pre-configured for New World and rarely need to change. 
 | `--limit N` | `20` | Maximum products to extract per URL. |
 | `--max-pages N` | unlimited | Stop after scraping this many resolved page URLs in total. |
 | `--count-only` | off | Resolve category/pagination URLs and print the total without scraping product pages. Useful as a preflight check before long runs. |
+| `--count-category-pages` | off | Discover categories, resolve pagination for each one, print a per-category page count, and exit. Implies `--count-only`. |
 | `--query TEXT` | none | Keep only products whose name contains this string (case-insensitive). |
 | `--dedupe` | off | Remove duplicate products by `product_key` across all URLs. When a duplicate is found, the entry with an image is preferred. |
 
