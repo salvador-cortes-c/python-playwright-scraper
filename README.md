@@ -354,7 +354,7 @@ The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC a
 
 ### Count workflow (stores + categories)
 
-The workflow `.github/workflows/count-metrics.yml` is a dedicated manual workflow for counting only, without running full product scraping.
+The workflow `.github/workflows/count_metrics.yml` is a dedicated manual workflow for counting only, without running full product scraping.
 
 How to run:
 
@@ -459,7 +459,7 @@ Required core files:
 
 - `scraper.py`
 - `requirements.txt`
-- `.github/workflows/count-metrics.yml`
+- `.github/workflows/count_metrics.yml`
 - `.github/workflows/scrape_scrapingbee.yml`
 - `.github/workflows/scrape-test.yml`
 

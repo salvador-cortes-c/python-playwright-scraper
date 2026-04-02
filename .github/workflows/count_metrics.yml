@@ -115,8 +115,8 @@ from pathlib import Path
 print(json.loads(Path('counts.json').read_text()).get('categories', 0))
 PY
 )
-            echo "🏬 **Stores counted:** $STORE_COUNT" >> "$GITHUB_STEP_SUMMARY"
-            echo "🧺 **Categories counted:** $CATEGORY_COUNT" >> "$GITHUB_STEP_SUMMARY"
+            echo "Stores counted: $STORE_COUNT" >> "$GITHUB_STEP_SUMMARY"
+            echo "Categories counted: $CATEGORY_COUNT" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "❌ counts.json was not created." >> "$GITHUB_STEP_SUMMARY"
+            echo "counts.json was not created." >> "$GITHUB_STEP_SUMMARY"
           fi
