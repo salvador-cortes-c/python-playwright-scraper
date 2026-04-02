@@ -1,6 +1,6 @@
 name: Count Stores and Categories
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       count_stores:

@@ -1,6 +1,6 @@
 name: Daily Product Scrape
 
-on:
+'on':
   schedule:
     # Run at 2 AM UTC daily (adjust for your timezone)
     - cron: '0 2 * * *'
