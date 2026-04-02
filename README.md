@@ -29,9 +29,11 @@ export ZENROWS_API_KEY="your_key_here"       # Zenrows
 
 Or pass it directly with `--api-key`. No key is needed for `--provider direct`.
 
-### Database + API setup (PostgreSQL)
+### Database persistence (PostgreSQL)
 
-Set your PostgreSQL URL (Supabase/Neon/local):
+The scraper can optionally persist product data and price snapshots to PostgreSQL instead of (or in addition to) JSON files.
+
+Set your PostgreSQL URL:
 
 ```bash
 export DATABASE_URL="postgresql://user:password@host:5432/dbname"
@@ -43,21 +45,16 @@ Apply schema once:
 psql "$DATABASE_URL" -f db/schema.sql
 ```
 
-Run scraper and persist results to DB:
+Run scraper with persistence enabled:
 
 ```bash
 python scraper.py \
   --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
-  --provider playwright \
   --persist-db \
   --database-url "$DATABASE_URL"
 ```
 
-Run API for frontend reads:
-
-```bash
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-```
+Your data is now available via the **[Postgres Products API](https://github.com/salvador-cortes-c/postgres-products-api)** for frontend queries.
 
 ---
 
@@ -401,14 +398,6 @@ python scraper.py \
 ```
 
 Expected output: `Discovered N category URLs` and `Resolved N page URLs to scrape`, then exit. In count-only mode, no product scraping happens and `--limit` is not used.
-
-### Smoke test API endpoints
-
-```bash
-curl http://localhost:8000/health
-curl "http://localhost:8000/products?limit=5"
-curl "http://localhost:8000/categories"
-```
 
 ---
 
