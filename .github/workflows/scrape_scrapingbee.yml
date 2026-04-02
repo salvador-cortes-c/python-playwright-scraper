@@ -40,14 +40,6 @@ on:
         description: 'Count number of categories from home page and exit'
         required: false
         default: 'false'
-      store_count_url:
-        description: 'URL used for store counting'
-        required: false
-        default: 'https://www.newworld.co.nz/shop/fulfillment'
-      category_count_url:
-        description: 'URL used for category counting'
-        required: false
-        default: 'https://www.newworld.co.nz/'
       store_name:
         description: 'Store name for Playwright mode (for example: New World Karori)'
         required: false
@@ -97,8 +89,8 @@ jobs:
           COUNT_ONLY="${{ github.event.inputs.count_only || 'false' }}"
           COUNT_STORES="${{ github.event.inputs.count_stores || 'false' }}"
           COUNT_CATEGORIES="${{ github.event.inputs.count_categories || 'false' }}"
-          STORE_COUNT_URL="${{ github.event.inputs.store_count_url || 'https://www.newworld.co.nz/shop/fulfillment' }}"
-          CATEGORY_COUNT_URL="${{ github.event.inputs.category_count_url || 'https://www.newworld.co.nz/' }}"
+          STORE_COUNT_URL="https://www.newworld.co.nz/shop/fulfillment"
+          CATEGORY_COUNT_URL="https://www.newworld.co.nz/"
           STORE_NAME="${{ github.event.inputs.store_name || '' }}"
           
           echo "Running scraper..."
