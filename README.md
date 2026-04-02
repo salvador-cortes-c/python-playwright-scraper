@@ -29,6 +29,36 @@ export ZENROWS_API_KEY="your_key_here"       # Zenrows
 
 Or pass it directly with `--api-key`. No key is needed for `--provider direct`.
 
+### Database + API setup (PostgreSQL)
+
+Set your PostgreSQL URL (Supabase/Neon/local):
+
+```bash
+export DATABASE_URL="postgresql://user:password@host:5432/dbname"
+```
+
+Apply schema once:
+
+```bash
+psql "$DATABASE_URL" -f db/schema.sql
+```
+
+Run scraper and persist results to DB:
+
+```bash
+python scraper.py \
+  --url "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1" \
+  --provider playwright \
+  --persist-db \
+  --database-url "$DATABASE_URL"
+```
+
+Run API for frontend reads:
+
+```bash
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 ---
 
 ## Quick start
@@ -221,6 +251,8 @@ These CSS selectors are pre-configured for New World and rarely need to change. 
 | `--price-output FILE` | `price_snapshots.json` | File to write price snapshots. |
 | `--append-snapshots` | off | Merge new snapshots into the existing `--price-output` file instead of overwriting. Keeps full price history across runs. |
 | `--category-output FILE` | none | Write discovered category names and URLs to this file. |
+| `--persist-db` | off | Persist final products/snapshots/categories to PostgreSQL. |
+| `--database-url URL` | `DATABASE_URL` env | PostgreSQL connection string used when `--persist-db` is enabled. |
 
 ### Filtering
 
@@ -369,6 +401,14 @@ python scraper.py \
 ```
 
 Expected output: `Discovered N category URLs` and `Resolved N page URLs to scrape`, then exit. In count-only mode, no product scraping happens and `--limit` is not used.
+
+### Smoke test API endpoints
+
+```bash
+curl http://localhost:8000/health
+curl "http://localhost:8000/products?limit=5"
+curl "http://localhost:8000/categories"
+```
 
 ---
 

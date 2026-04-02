@@ -22,6 +22,8 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 import aiohttp
 from bs4 import BeautifulSoup, Tag
 
+from database import persist_scrape_results, resolve_database_url
+
 try:
     from playwright.async_api import async_playwright
     from playwright_stealth import Stealth
@@ -335,6 +337,42 @@ def write_category_links(output_path: Path, categories: list[CategoryLink]) -> N
         seen_category_urls.add(category.url)
         unique_categories.append(category)
     output_path.write_text(json.dumps([asdict(category) for category in unique_categories], indent=2), encoding="utf-8")
+
+
+def maybe_persist_to_database(
+    args: argparse.Namespace,
+    *,
+    provider: str,
+    mode: str,
+    started_at: datetime,
+    products: list[Product],
+    snapshots: list[ProductPriceSnapshot],
+    categories: list[CategoryLink],
+) -> None:
+    if not args.persist_db:
+        return
+
+    database_url = resolve_database_url(args.database_url)
+    if not database_url:
+        raise SystemExit("--persist-db requires --database-url or DATABASE_URL environment variable.")
+
+    stats = persist_scrape_results(
+        database_url=database_url,
+        provider=provider,
+        mode=mode,
+        started_at=started_at,
+        products=products,
+        snapshots=snapshots,
+        categories=categories,
+    )
+    print(
+        "Persisted to DB: "
+        f"products={stats.products_upserted}, "
+        f"stores={stats.stores_upserted}, "
+        f"categories={stats.categories_upserted}, "
+        f"snapshots={stats.snapshots_inserted}, "
+        f"product_category_links={stats.product_category_links_upserted}"
+    )
 
 
 def load_price_snapshots(path: Path) -> list[ProductPriceSnapshot]:
@@ -791,6 +829,7 @@ async def scrape_url_playwright(
 
 async def run_playwright_mode(args: argparse.Namespace) -> None:
     _ensure_playwright_available()
+    run_started_at = datetime.now(timezone.utc)
 
     store_names_to_scrape = _normalize_store_names(args.store_names)
     if store_names_to_scrape and args.scrape_all_stores:
@@ -1036,6 +1075,17 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
     print(f"Saved {len(all_products)} products to {output_path}")
     print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
+
+    maybe_persist_to_database(
+        args,
+        provider="playwright",
+        mode="scrape",
+        started_at=run_started_at,
+        products=all_products,
+        snapshots=all_snapshots,
+        categories=discovered_categories_all,
+    )
+
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
 
@@ -1487,6 +1537,16 @@ async def main() -> None:
         help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPINGBEE_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY).",
     )
     parser.add_argument(
+        "--persist-db",
+        action="store_true",
+        help="Persist final products and price snapshots to PostgreSQL.",
+    )
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="PostgreSQL connection string. Falls back to DATABASE_URL env var.",
+    )
+    parser.add_argument(
         "--scrapingbee-wait-ms",
         type=int,
         default=3000,
@@ -1496,6 +1556,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     provider_name: str = args.provider
+    run_started_at = datetime.now(timezone.utc)
     if provider_name == "playwright":
         await run_playwright_mode(args)
         return
@@ -1760,6 +1821,17 @@ async def main() -> None:
 
     print(f"Saved {len(all_products)} products to {output_path}")
     print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
+
+    maybe_persist_to_database(
+        args,
+        provider=provider_name,
+        mode="scrape",
+        started_at=run_started_at,
+        products=all_products,
+        snapshots=all_snapshots,
+        categories=discovered_categories_all,
+    )
+
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
 
