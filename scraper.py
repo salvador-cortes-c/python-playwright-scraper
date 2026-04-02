@@ -756,6 +756,31 @@ def _normalize_store_names(raw_values: list[str] | None) -> list[str]:
     return normalized
 
 
+def _normalize_store_cities(raw_values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    if not raw_values:
+        return normalized
+    for entry in raw_values:
+        if not entry:
+            continue
+        parts = [part.strip() for part in str(entry).split(",")]
+        normalized.extend([part for part in parts if part])
+    return normalized
+
+
+def _filter_store_names_by_city(store_names: list[str], store_cities: list[str]) -> list[str]:
+    if not store_cities:
+        return sorted(store_names)
+
+    city_tokens = [city.lower() for city in store_cities]
+    filtered = [
+        store_name
+        for store_name in store_names
+        if any(token in store_name.lower() for token in city_tokens)
+    ]
+    return sorted(filtered)
+
+
 async def _playwright_navigate(
     page: Any,
     url: str,
@@ -887,7 +912,8 @@ async def discover_store_names_playwright(page: Any, start_url: str, args: argpa
         last_seen_size = len(seen)
         if stagnation >= 6:
             break
-    return sorted(seen)
+    store_cities = _normalize_store_cities(args.store_city)
+    return _filter_store_names_by_city(list(seen), store_cities)
 
 
 async def count_stores_playwright(page: Any, start_url: str, args: argparse.Namespace) -> int:
@@ -931,7 +957,11 @@ async def count_stores_playwright(page: Any, start_url: str, args: argparse.Name
         last_seen_size = len(seen)
         if stagnation >= 6:
             break
-    return len(seen)
+    store_cities = _normalize_store_cities(args.store_city)
+    filtered = _filter_store_names_by_city(list(seen), store_cities)
+    if store_cities:
+        print(f"City filter applied ({', '.join(store_cities)}): {len(filtered)} stores matched")
+    return len(filtered)
 
 
 async def discover_category_urls_playwright(
@@ -992,6 +1022,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
     run_started_at = datetime.now(timezone.utc)
 
     store_names_to_scrape = _normalize_store_names(args.store_names)
+    store_cities = _normalize_store_cities(args.store_city)
     if store_names_to_scrape and args.scrape_all_stores:
         raise SystemExit("Do not combine --store-names with --scrape-all-stores. Use one or the other.")
 
@@ -1045,6 +1076,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 else:
                     store_indices = None
                     stores = await discover_store_names_playwright(page, args.url[0], args)
+                    if store_cities:
+                        print(f"City filter applied ({', '.join(store_cities)}): {len(stores)} stores matched")
+                    if not stores:
+                        raise SystemExit(
+                            "No stores matched --store-city filter. "
+                            "Try a different city or remove --store-city."
+                        )
                 args.resume = False
             elif store_names_to_scrape:
                 store_indices = None
@@ -1577,6 +1615,12 @@ async def main() -> None:
         default=None,
         help="Specific store name(s) to scrape in Playwright mode. May be repeated or comma-separated.",
     )
+    parser.add_argument(
+        "--store-city",
+        action="append",
+        default=None,
+        help="Filter stores by city name (case-insensitive). May be repeated or comma-separated.",
+    )
     parser.add_argument("--store-index", type=int, default=0, help="Fallback store option index in Playwright mode.")
     parser.add_argument(
         "--store-ribbon-button-selector",
@@ -1841,12 +1885,21 @@ async def main() -> None:
                 )
                 print(_diag, flush=True)
                 store_names = discover_store_names_from_html(html)
+                store_cities = _normalize_store_cities(args.store_city)
                 if not store_names:
                     raise RuntimeError(
                         "No store options were detected in provider HTML. "
                         "Try increasing --render-wait-ms or verify provider key/URL. "
                         + _diag
                     )
+                store_names = _filter_store_names_by_city(store_names, store_cities)
+                if store_cities and not store_names:
+                    raise RuntimeError(
+                        "No stores matched --store-city filter. "
+                        "Try a different city or remove --store-city."
+                    )
+                if store_cities:
+                    print(f"City filter applied ({', '.join(store_cities)}): {len(store_names)} stores matched")
                 print(f"Total number of stores: {len(store_names)}")
             except Exception as exc:
                 print(f"Error counting stores: {exc}")

@@ -147,6 +147,17 @@ python scraper.py \
 
 This will output: `Total number of stores: N`
 
+Count stores for a specific city only:
+
+```bash
+python scraper.py \
+  --provider scrapingbee \
+  --url "https://www.newworld.co.nz/shop/fulfillment" \
+  --render-wait-ms 12000 \
+  --store-city "Auckland" \
+  --count-stores
+```
+
 Preflight count only in Playwright mode (store-specific):
 
 ```bash
@@ -308,6 +319,7 @@ These flags are active only when `--provider playwright` is used.
 | Flag | Default | Description |
 |---|---|---|
 | `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Works with provider mode (recommended: `scrapingbee` with higher `--render-wait-ms`) and Playwright mode. |
+| `--store-city CITY` | none | Filter discovered stores by city name (case-insensitive). May be repeated or comma-separated. Affects `--count-stores` and Playwright `--scrape-all-stores` store discovery. |
 | `--choose-store` | off | Select a store before scraping. |
 | `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`. |
 | `--store-names NAME` | none | Scrape only the specified store name(s). May be repeated or comma-separated. |
