@@ -741,16 +741,31 @@ def _first_store_value(item: dict[str, Any], keys: tuple[str, ...]) -> str:
     return ""
 
 
+def _derive_city_suburb_from_address(address: str) -> tuple[str, str]:
+    if not address:
+        return "", ""
+    parts = [part.strip() for part in address.split(",") if part.strip()]
+    if len(parts) >= 3:
+        return parts[-2], parts[-3]
+    if len(parts) == 2:
+        return parts[-2], ""
+    return "", ""
+
+
 def _build_store_record(item: dict[str, Any]) -> StoreRecord | None:
     name = _first_store_value(item, _STORE_NAME_KEYS)
     if not name or len(name) < 4 or re.search(r"[/:?#{}$]", name):
         return None
-    return StoreRecord(
-        name=name,
-        city=_first_store_value(item, _STORE_CITY_KEYS),
-        suburb=_first_store_value(item, _STORE_SUBURB_KEYS),
-        address=_first_store_value(item, _STORE_ADDRESS_KEYS),
-    )
+    address = _first_store_value(item, _STORE_ADDRESS_KEYS)
+    city = _first_store_value(item, _STORE_CITY_KEYS)
+    suburb = _first_store_value(item, _STORE_SUBURB_KEYS)
+    if not city or not suburb:
+        derived_city, derived_suburb = _derive_city_suburb_from_address(address)
+        if not city:
+            city = derived_city
+        if not suburb:
+            suburb = derived_suburb
+    return StoreRecord(name=name, city=city, suburb=suburb, address=address)
 
 
 def _merge_store_record(existing: StoreRecord, candidate: StoreRecord) -> StoreRecord:
@@ -901,10 +916,13 @@ def _filter_store_records_by_city(store_records: list[StoreRecord], store_cities
 def _store_record_matches_city(record: StoreRecord, city_tokens: list[str]) -> bool:
     if not city_tokens:
         return True
-    searchable_fields = [part.lower() for part in [record.city, record.suburb] if part]
-    if not searchable_fields:
-        return False
-    return any(token in field for token in city_tokens for field in searchable_fields)
+    if record.city:
+        city_value = record.city.lower()
+        return any(token in city_value for token in city_tokens)
+    if record.suburb:
+        suburb_value = record.suburb.lower()
+        return any(token in suburb_value for token in city_tokens)
+    return False
 
 
 def _format_store_record_debug(record: StoreRecord) -> str:
