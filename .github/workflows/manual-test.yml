@@ -66,13 +66,19 @@ jobs:
             echo "Applying city filter: $city"
             city_args=(--store-city "$city")
           fi
+          set +e
           output=$(python scraper.py \
             --provider scrapingbee \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 12000 \
             --count-stores \
             "${city_args[@]}")
+          status=$?
+          set -e
           printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           store_count=$(printf '%s\n' "$output" | sed -n 's/^Total number of stores: \([0-9][0-9]*\)$/\1/p' | tail -1)
           if [ -z "$store_count" ]; then
             echo "Failed to parse store count"
@@ -91,6 +97,7 @@ jobs:
             echo "Applying city filter: $city"
             city_args=(--store-city "$city")
           fi
+          set +e
           output=$(python scraper.py \
             --provider scrapingbee \
             --url "https://www.newworld.co.nz/" \
@@ -98,7 +105,12 @@ jobs:
             --discover-category-urls \
             --count-category-pages \
             "${city_args[@]}")
+          status=$?
+          set -e
           printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           category_count=$(printf '%s\n' "$output" | sed -n 's/^Discovered \([0-9][0-9]*\) unique category URLs$/\1/p' | tail -1)
           total_pages=$(printf '%s\n' "$output" | sed -n 's/^Total category pages across all categories: \([0-9][0-9]*\)$/\1/p' | tail -1)
           if [ -z "$category_count" ] || [ -z "$total_pages" ]; then
