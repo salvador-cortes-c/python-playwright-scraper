@@ -152,12 +152,7 @@ jobs:
               CATEGORY_COUNT=${CATEGORY_COUNT:-0}
             fi
 
-            cat > counts.json <<EOF
-            {
-              "stores": ${STORE_COUNT},
-              "categories": ${CATEGORY_COUNT}
-            }
-            EOF
+            printf '{\n  "stores": %s,\n  "categories": %s\n}\n' "${STORE_COUNT}" "${CATEGORY_COUNT}" > counts.json
 
             echo "Count summary:"
             cat counts.json
