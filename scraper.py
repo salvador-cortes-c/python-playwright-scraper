@@ -893,12 +893,18 @@ def _filter_store_records_by_city(store_records: list[StoreRecord], store_cities
     city_tokens = [city.lower() for city in store_cities]
     filtered: list[StoreRecord] = []
     for record in store_records:
-        haystack = " ".join(
-            part for part in [record.name, record.city, record.suburb, record.address] if part
-        ).lower()
-        if any(token in haystack for token in city_tokens):
+        if _store_record_matches_city(record, city_tokens):
             filtered.append(record)
     return sorted(filtered, key=lambda item: item.name)
+
+
+def _store_record_matches_city(record: StoreRecord, city_tokens: list[str]) -> bool:
+    if not city_tokens:
+        return True
+    searchable_fields = [part.lower() for part in [record.city, record.suburb] if part]
+    if not searchable_fields:
+        return False
+    return any(token in field for token in city_tokens for field in searchable_fields)
 
 
 def _format_store_record_debug(record: StoreRecord) -> str:
@@ -918,10 +924,7 @@ def _print_store_record_debug(records: list[StoreRecord], store_cities: list[str
 
     city_tokens = [city.lower() for city in store_cities]
     for record in records:
-        haystack = " ".join(
-            part for part in [record.name, record.city, record.suburb, record.address] if part
-        ).lower()
-        matched = (not city_tokens) or any(token in haystack for token in city_tokens)
+        matched = _store_record_matches_city(record, city_tokens)
         status = "matched" if matched else "skipped"
         print(f"[store:{status}] {_format_store_record_debug(record)}", flush=True)
 
