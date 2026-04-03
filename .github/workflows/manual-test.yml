@@ -22,7 +22,7 @@ jobs:
   count-metrics:
     runs-on: ubuntu-latest
     env:
-      SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+      ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,10 +38,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Validate ScraperAPI key
+      - name: Validate ZenRows key
         run: |
-          if [ -z "${SCRAPERAPI_KEY:-}" ]; then
-            echo "SCRAPERAPI_KEY is not set in repository secrets"
+          if [ -z "${ZENROWS_API_KEY:-}" ]; then
+            echo "ZENROWS_API_KEY is not set in repository secrets"
             exit 1
           fi
 
@@ -50,13 +50,13 @@ jobs:
         continue-on-error: true
         run: |
           python scraper.py \
-            --provider scraperapi \
+            --provider zenrows \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 10000 \
             --count-stores \
             || true
 
-      - name: Count stores via ScraperAPI
+      - name: Count stores via ZenRows
         id: count_stores
         run: |
           set -euo pipefail
@@ -68,7 +68,7 @@ jobs:
           fi
           set +e
           output=$(python scraper.py \
-            --provider scraperapi \
+            --provider zenrows \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 12000 \
             --count-stores \
@@ -86,7 +86,7 @@ jobs:
           fi
           echo "store_count=$store_count" >> "$GITHUB_OUTPUT"
 
-      - name: Count category pages via ScraperAPI
+      - name: Count category pages via ZenRows
         if: ${{ inputs.include_category_pages }}
         id: count_category_pages
         run: |
@@ -99,7 +99,7 @@ jobs:
           fi
           set +e
           output=$(python scraper.py \
-            --provider scraperapi \
+            --provider zenrows \
             --url "https://www.newworld.co.nz/" \
             --render-wait-ms 8000 \
             --discover-category-urls \
