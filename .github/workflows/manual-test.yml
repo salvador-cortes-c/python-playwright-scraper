@@ -53,6 +53,7 @@ jobs:
             --provider scraperapi \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 10000 \
+            --ultra-premium-proxy \
             --count-stores \
             || true
 
@@ -72,6 +73,7 @@ jobs:
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 12000 \
             --premium-proxy \
+            --ultra-premium-proxy \
             --count-stores \
             "${city_args[@]}")
           status=$?
@@ -104,6 +106,7 @@ jobs:
             --url "https://www.newworld.co.nz/" \
             --render-wait-ms 8000 \
             --premium-proxy \
+            --ultra-premium-proxy \
             --discover-category-urls \
             --count-category-pages \
             "${city_args[@]}")

@@ -76,11 +76,19 @@ FetchResult = tuple[Optional[str], Optional[dict[str, Any]], int | None]
 class _BaseProvider:
     """Shared fetch mechanics for proxy-API-based scraping providers."""
 
-    def __init__(self, api_key: str, render_wait_ms: int, country_code: str, premium_proxy: bool) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        render_wait_ms: int,
+        country_code: str,
+        premium_proxy: bool,
+        ultra_premium_proxy: bool = False,
+    ) -> None:
         self.api_key = api_key
         self.render_wait_ms = render_wait_ms
         self.country_code = country_code
         self.premium_proxy = premium_proxy
+        self.ultra_premium_proxy = ultra_premium_proxy
 
     @property
     def name(self) -> str:  # pragma: no cover
@@ -156,7 +164,9 @@ class ScraperAPIProvider(_BaseProvider):
             "country_code": self.country_code,
             "keep_headers": "true",
         }
-        if self.premium_proxy:
+        if self.ultra_premium_proxy:
+            params["ultra_premium"] = "true"
+        elif self.premium_proxy:
             params["premium"] = "true"
         if self.render_wait_ms > 0:
             params["wait_for_css"] = "body"
@@ -239,6 +249,7 @@ def build_provider(
     render_wait_ms: int,
     country_code: str,
     premium_proxy: bool,
+    ultra_premium_proxy: bool,
 ) -> AnyProvider:
     if provider_name == "direct":
         return DirectProvider()
@@ -263,6 +274,7 @@ def build_provider(
         render_wait_ms=render_wait_ms,
         country_code=country_code,
         premium_proxy=premium_proxy,
+        ultra_premium_proxy=ultra_premium_proxy,
     )
 
 
@@ -1894,6 +1906,12 @@ async def main() -> None:
         help="Use premium/residential proxies when supported by the provider (default: true).",
     )
     parser.add_argument(
+        "--ultra-premium-proxy",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Use ultra premium proxies for ScraperAPI when available (default: false).",
+    )
+    parser.add_argument(
         "--render-wait-ms",
         type=int,
         default=None,
@@ -1949,12 +1967,16 @@ async def main() -> None:
             render_wait_ms=render_wait_ms,
             country_code=args.country_code,
             premium_proxy=args.premium_proxy,
+            ultra_premium_proxy=args.ultra_premium_proxy,
         )
     except ValueError as exc:
         print(f"Error: {exc}")
         raise SystemExit(1)
 
     print(f"Using scraping provider: {provider_name}")
+
+    if args.ultra_premium_proxy and provider_name != "scraperapi":
+        print("WARNING: --ultra-premium-proxy is only supported for --provider scraperapi and will be ignored.")
 
     unsupported_flags_used = any(
         [
