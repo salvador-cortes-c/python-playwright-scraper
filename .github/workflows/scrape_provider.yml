@@ -15,7 +15,7 @@ name: Daily Product Scrape
       provider:
         description: 'Scraping provider/engine: scrapingbee, scraperapi, crawlbase, zenrows, direct, playwright'
         required: false
-        default: 'scrapingbee'
+        default: 'scraperapi'
       limit:
         description: 'Max products to scrape'
         required: false
@@ -69,7 +69,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ github.event.inputs.provider == 'playwright' || github.event.inputs.count_stores == 'true' || github.event.inputs.count_categories == 'true' }}
+        if: ${{ github.event.inputs.provider == 'playwright' }}
         run: |
           python -m playwright install firefox
           python -m playwright install-deps firefox
@@ -82,7 +82,7 @@ jobs:
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
         run: |
           URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
-          PROVIDER="${{ github.event.inputs.provider || 'scrapingbee' }}"
+          PROVIDER="${{ github.event.inputs.provider || 'scraperapi' }}"
           LIMIT="${{ github.event.inputs.limit || '20' }}"
           MAX_PAGES="${{ github.event.inputs.max_pages || '3' }}"
           DISCOVER_CATEGORY_URLS="${{ github.event.inputs.discover_category_urls || 'false' }}"
@@ -111,7 +111,7 @@ jobs:
 
             if [ "$COUNT_STORES" = "true" ]; then
               python scraper.py \
-                --provider playwright \
+                --provider "$PROVIDER" \
                 --url "$STORE_COUNT_URL" \
                 --count-stores | tee /tmp/store_count.log
               STORE_COUNT=$(awk -F': ' '/^Total number of stores:/{print $2}' /tmp/store_count.log | tail -n 1)
@@ -120,7 +120,7 @@ jobs:
 
             if [ "$COUNT_CATEGORIES" = "true" ]; then
               python scraper.py \
-                --provider playwright \
+                --provider "$PROVIDER" \
                 --url "$CATEGORY_COUNT_URL" \
                 --discover-category-urls \
                 --count-only | tee /tmp/category_count.log
@@ -140,7 +140,7 @@ jobs:
             exit 0
           fi
           
-          if [ "$PROVIDER" != "playwright" ] && [ "$PROVIDER" != "direct" ] && [ -z "$SCRAPING_PROVIDER_API_KEY" ] && [ "$PROVIDER" = "scrapingbee" ]; then
+          if [ "$PROVIDER" = "scrapingbee" ] && [ -z "$SCRAPING_PROVIDER_API_KEY" ]; then
             echo "❌ ERROR: SCRAPING_PROVIDER_API_KEY secret not set"
             echo ""
             echo "💡 How to set it:"
@@ -148,6 +148,17 @@ jobs:
             echo "   2. Click 'New repository secret'"
             echo "   3. Name: SCRAPING_PROVIDER_API_KEY"
             echo "   4. Value: Your ScrapingBee API key"
+            exit 1
+          fi
+
+          if [ "$PROVIDER" = "scraperapi" ] && [ -z "$SCRAPERAPI_KEY" ]; then
+            echo "❌ ERROR: SCRAPERAPI_KEY secret not set"
+            echo ""
+            echo "💡 How to set it:"
+            echo "   1. Go to Repository Settings → Secrets and variables → Actions"
+            echo "   2. Click 'New repository secret'"
+            echo "   3. Name: SCRAPERAPI_KEY"
+            echo "   4. Value: Your ScraperAPI key"
             exit 1
           fi
 
@@ -197,7 +208,7 @@ jobs:
       - name: Upload scraped data
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-results-scrapingbee
+          name: scrape-results-scraperapi
           path: |
             products.json
             price_snapshots.json
@@ -255,7 +266,7 @@ PY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow run:** $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Provider:** ${{ github.event.inputs.provider || 'scrapingbee' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Provider:** ${{ github.event.inputs.provider || 'scraperapi' }}" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "**Manual run with URL:** ${{ github.event.inputs.url || 'default' }}" >> $GITHUB_STEP_SUMMARY
           fi

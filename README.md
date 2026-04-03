@@ -373,7 +373,7 @@ The ±25% jitter prevents multiple workers from retrying in sync.
 
 ## GitHub Actions
 
-The workflow `.github/workflows/scrape_scrapingbee.yml` runs daily at 2 AM UTC and can be triggered manually from the Actions tab.
+The workflow `.github/workflows/scrape_provider.yml` runs daily at 2 AM UTC and can be triggered manually from the Actions tab.
 
 ### Count workflow (stores + categories)
 
@@ -423,7 +423,7 @@ No secret is needed for `direct` or `playwright` mode.
 | Input | Default | Description |
 |---|---|---|
 | `url` | fruit-and-vegetables page | Category URL to scrape. |
-| `provider` | `scrapingbee` | Scraping provider/engine. Use `playwright` for real browser mode. |
+| `provider` | `scraperapi` | Scraping provider/engine. Use `playwright` for real browser mode. |
 | `limit` | `20` | Max products per page URL. Ignored when `count_only=true` because no products are scraped. |
 | `max_pages` | `3` | Max resolved page URLs to scrape in total. |
 | `discover_category_urls` | `false` | Start from the given URL, discover category URLs, then crawl each category. |
@@ -477,7 +477,7 @@ Required core files:
 - `scraper.py`
 - `requirements.txt`
 - `.github/workflows/manual-test.yml`
-- `.github/workflows/scrape_scrapingbee.yml`
+- `.github/workflows/scrape_provider.yml`
 - `.github/workflows/scrape-test.yml`
 
 Local checks without helper scripts:
