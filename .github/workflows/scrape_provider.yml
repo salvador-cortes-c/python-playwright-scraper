@@ -40,6 +40,22 @@ name: Daily Product Scrape
         description: 'Count number of categories from home page and exit'
         required: false
         default: 'false'
+      scrape_all_stores:
+        description: 'Playwright mode: scrape across all discovered stores'
+        required: false
+        default: 'false'
+      store_city:
+        description: 'Optional city filter for stores (e.g. Wellington)'
+        required: false
+        default: ''
+      max_stores:
+        description: 'Optional cap on number of stores when scrape_all_stores=true'
+        required: false
+        default: ''
+      persist_db:
+        description: 'Persist products and snapshots to PostgreSQL'
+        required: false
+        default: 'false'
       store_name:
         description: 'Store name for Playwright mode (for example: New World Karori)'
         required: false
@@ -80,6 +96,7 @@ jobs:
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           CRAWLBASE_TOKEN: ${{ secrets.CRAWLBASE_TOKEN }}
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
           PROVIDER="${{ github.event.inputs.provider || 'scraperapi' }}"
@@ -89,6 +106,10 @@ jobs:
           COUNT_ONLY="${{ github.event.inputs.count_only || 'false' }}"
           COUNT_STORES="${{ github.event.inputs.count_stores || 'false' }}"
           COUNT_CATEGORIES="${{ github.event.inputs.count_categories || 'false' }}"
+          SCRAPE_ALL_STORES="${{ github.event.inputs.scrape_all_stores || 'false' }}"
+          STORE_CITY="${{ github.event.inputs.store_city || '' }}"
+          MAX_STORES="${{ github.event.inputs.max_stores || '' }}"
+          PERSIST_DB="${{ github.event.inputs.persist_db || 'false' }}"
           STORE_COUNT_URL="https://www.newworld.co.nz/shop/fulfillment"
           CATEGORY_COUNT_URL="https://www.newworld.co.nz/"
           STORE_NAME="${{ github.event.inputs.store_name || '' }}"
@@ -102,6 +123,9 @@ jobs:
           echo "Count only: $COUNT_ONLY"
           echo "Count stores: $COUNT_STORES"
           echo "Count categories: $COUNT_CATEGORIES"
+          echo "Scrape all stores: $SCRAPE_ALL_STORES"
+          echo "Store city: ${STORE_CITY:-<none>}"
+          echo "Persist DB: $PERSIST_DB"
           echo "Store name: ${STORE_NAME:-<none>}"
 
           if [ "$COUNT_STORES" = "true" ] || [ "$COUNT_CATEGORIES" = "true" ]; then
@@ -162,6 +186,17 @@ jobs:
             exit 1
           fi
 
+          if [ "$PERSIST_DB" = "true" ] && [ -z "$DATABASE_URL" ]; then
+            echo "❌ ERROR: DATABASE_URL secret not set"
+            echo ""
+            echo "💡 How to set it:"
+            echo "   1. Go to Repository Settings → Secrets and variables → Actions"
+            echo "   2. Click 'New repository secret'"
+            echo "   3. Name: DATABASE_URL"
+            echo "   4. Value: postgresql://user:password@host:5432/dbname"
+            exit 1
+          fi
+
           CMD=(python scraper.py
             --provider "$PROVIDER"
             --url "$URL"
@@ -199,6 +234,22 @@ jobs:
             CMD+=(--choose-store --store-name "$STORE_NAME")
           fi
 
+          if [ "$SCRAPE_ALL_STORES" = "true" ]; then
+            CMD+=(--scrape-all-stores)
+          fi
+
+          if [ -n "$STORE_CITY" ]; then
+            CMD+=(--store-city "$STORE_CITY")
+          fi
+
+          if [ -n "$MAX_STORES" ]; then
+            CMD+=(--max-stores "$MAX_STORES")
+          fi
+
+          if [ "$PERSIST_DB" = "true" ]; then
+            CMD+=(--persist-db --database-url "$DATABASE_URL")
+          fi
+
           printf 'Command: '
           printf '%q ' "${CMD[@]}"
           echo
@@ -224,20 +275,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ -f "counts.json" ]; then
-            STORE_COUNT=$(python - <<'PY'
-import json
-from pathlib import Path
-data = json.loads(Path("counts.json").read_text())
-print(data.get("stores", 0))
-PY
-)
-            CATEGORY_COUNT=$(python - <<'PY'
-import json
-from pathlib import Path
-data = json.loads(Path("counts.json").read_text())
-print(data.get("categories", 0))
-PY
-)
+            STORE_COUNT=$(jq '.stores // 0' counts.json 2>/dev/null || echo "0")
+            CATEGORY_COUNT=$(jq '.categories // 0' counts.json 2>/dev/null || echo "0")
             echo "🏬 **Stores counted:** $STORE_COUNT" >> $GITHUB_STEP_SUMMARY
             echo "🧺 **Categories counted:** $CATEGORY_COUNT" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
