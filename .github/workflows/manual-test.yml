@@ -71,7 +71,6 @@ jobs:
             --provider scraperapi \
             --url "https://www.newworld.co.nz/shop/fulfillment" \
             --render-wait-ms 12000 \
-            --premium-proxy \
             --count-stores \
             "${city_args[@]}")
           status=$?
@@ -103,7 +102,6 @@ jobs:
             --provider scraperapi \
             --url "https://www.newworld.co.nz/" \
             --render-wait-ms 8000 \
-            --premium-proxy \
             --discover-category-urls \
             --count-category-pages \
             "${city_args[@]}")
