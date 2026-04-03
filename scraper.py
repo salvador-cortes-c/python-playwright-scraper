@@ -195,7 +195,7 @@ class ZenrowsProvider(_BaseProvider):
             "url": url,
             "js_render": "true",
             "premium_proxy": "true" if self.premium_proxy else "false",
-            "country_code": self.country_code,
+            "proxy_country": self.country_code,
         }
         if self.render_wait_ms > 0:
             params["wait"] = str(self.render_wait_ms)
