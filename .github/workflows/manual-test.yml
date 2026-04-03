@@ -7,6 +7,16 @@ on:
         description: "Optional city filter for stores (e.g. Wellington)"
         required: false
         default: ""
+      include_category_pages:
+        description: "Also count category pages and print stores * pages"
+        required: false
+        default: false
+        type: boolean
+      run_debug_fetch:
+        description: "Run the extra debug fulfillment fetch before counting"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   count-metrics:
@@ -36,6 +46,7 @@ jobs:
           fi
 
       - name: Debug - inspect fulfillment page HTML
+        if: ${{ inputs.run_debug_fetch }}
         continue-on-error: true
         run: |
           python scraper.py \
@@ -70,6 +81,7 @@ jobs:
           echo "store_count=$store_count" >> "$GITHUB_OUTPUT"
 
       - name: Count category pages via ScrapingBee
+        if: ${{ inputs.include_category_pages }}
         id: count_category_pages
         run: |
           set -euo pipefail
@@ -97,6 +109,7 @@ jobs:
           echo "total_pages=$total_pages" >> "$GITHUB_OUTPUT"
 
       - name: Print multiplied total
+        if: ${{ inputs.include_category_pages }}
         run: |
           set -euo pipefail
           stores='${{ steps.count_stores.outputs.store_count }}'

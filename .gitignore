@@ -51,7 +51,7 @@ Thumbs.db
 products.json
 price_snapshots.json
 scrape_progress.json
-storage_state.json  # Cookies - regenerate as needed
+storage_state.json
 category_urls*.json
 
 # Test/output files

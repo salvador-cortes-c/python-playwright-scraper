@@ -707,6 +707,110 @@ _STORE_JSON_KEYS = frozenset(
      "locations", "picklocation", "pickuplocations", "storelocations"}
 )
 _STORE_NAME_KEYS = ("name", "storeName", "store_name", "displayName", "label", "title")
+_STORE_CITY_KEYS = ("city", "town", "locality")
+_STORE_SUBURB_KEYS = ("suburb", "area", "district")
+_STORE_ADDRESS_KEYS = (
+    "address",
+    "address1",
+    "addressLine1",
+    "streetAddress",
+    "formattedAddress",
+    "line1",
+)
+
+
+@dataclass(frozen=True)
+class StoreRecord:
+    name: str
+    city: str = ""
+    suburb: str = ""
+    address: str = ""
+
+
+def _clean_store_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return _clean_text(value)
+
+
+def _first_store_value(item: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _clean_store_text(item.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _build_store_record(item: dict[str, Any]) -> StoreRecord | None:
+    name = _first_store_value(item, _STORE_NAME_KEYS)
+    if not name or len(name) < 4 or re.search(r"[/:?#{}$]", name):
+        return None
+    return StoreRecord(
+        name=name,
+        city=_first_store_value(item, _STORE_CITY_KEYS),
+        suburb=_first_store_value(item, _STORE_SUBURB_KEYS),
+        address=_first_store_value(item, _STORE_ADDRESS_KEYS),
+    )
+
+
+def _merge_store_record(existing: StoreRecord, candidate: StoreRecord) -> StoreRecord:
+    return StoreRecord(
+        name=existing.name,
+        city=existing.city or candidate.city,
+        suburb=existing.suburb or candidate.suburb,
+        address=existing.address or candidate.address,
+    )
+
+
+def _collect_store_records_from_json(
+    data: Any,
+    out: dict[str, StoreRecord],
+    depth: int = 0,
+) -> None:
+    if depth > 30:
+        return
+    if isinstance(data, list):
+        for item in data:
+            _collect_store_records_from_json(item, out, depth + 1)
+    elif isinstance(data, dict):
+        for key, val in data.items():
+            if key.lower() in _STORE_JSON_KEYS and isinstance(val, list):
+                for item in val:
+                    if not isinstance(item, dict):
+                        continue
+                    record = _build_store_record(item)
+                    if record is not None:
+                        existing = out.get(record.name)
+                        out[record.name] = _merge_store_record(existing, record) if existing else record
+                    _collect_store_records_from_json(item, out, depth + 1)
+            else:
+                _collect_store_records_from_json(val, out, depth + 1)
+
+
+def discover_store_records_from_html(html: str) -> list[StoreRecord]:
+    """Best-effort store record extraction from rendered HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+    records_by_name: dict[str, StoreRecord] = {}
+
+    for script_tag in soup.find_all("script"):
+        tag_id = script_tag.get("id") or ""
+        content = script_tag.string or ""
+        if not content:
+            continue
+        is_next_data = tag_id == "__NEXT_DATA__"
+        has_store_hint = is_next_data or bool(
+            re.search(r"storeName|store_name|fulfillmentStore", content, re.IGNORECASE)
+        )
+        if not has_store_hint:
+            continue
+        json_text = re.sub(r"^\s*\w[\w.]*\s*=\s*", "", content.strip())
+        try:
+            data = json.loads(json_text)
+            _collect_store_records_from_json(data, records_by_name)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return sorted(records_by_name.values(), key=lambda item: item.name)
 
 
 def _collect_store_names_from_json(data: Any, out: set[str], depth: int = 0) -> None:
@@ -730,6 +834,7 @@ def _collect_store_names_from_json(data: Any, out: set[str], depth: int = 0) -> 
                                     break
             else:
                 _collect_store_names_from_json(val, out, depth + 1)
+
 
 def _playwright_is_ready() -> bool:
     return async_playwright is not None and Stealth is not None
@@ -779,6 +884,46 @@ def _filter_store_names_by_city(store_names: list[str], store_cities: list[str])
         if any(token in store_name.lower() for token in city_tokens)
     ]
     return sorted(filtered)
+
+
+def _filter_store_records_by_city(store_records: list[StoreRecord], store_cities: list[str]) -> list[StoreRecord]:
+    if not store_cities:
+        return sorted(store_records, key=lambda item: item.name)
+
+    city_tokens = [city.lower() for city in store_cities]
+    filtered: list[StoreRecord] = []
+    for record in store_records:
+        haystack = " ".join(
+            part for part in [record.name, record.city, record.suburb, record.address] if part
+        ).lower()
+        if any(token in haystack for token in city_tokens):
+            filtered.append(record)
+    return sorted(filtered, key=lambda item: item.name)
+
+
+def _format_store_record_debug(record: StoreRecord) -> str:
+    parts = [f"name={record.name}"]
+    if record.city:
+        parts.append(f"city={record.city}")
+    if record.suburb:
+        parts.append(f"suburb={record.suburb}")
+    if record.address:
+        parts.append(f"address={record.address}")
+    return ", ".join(parts)
+
+
+def _print_store_record_debug(records: list[StoreRecord], store_cities: list[str]) -> None:
+    if not records:
+        return
+
+    city_tokens = [city.lower() for city in store_cities]
+    for record in records:
+        haystack = " ".join(
+            part for part in [record.name, record.city, record.suburb, record.address] if part
+        ).lower()
+        matched = (not city_tokens) or any(token in haystack for token in city_tokens)
+        status = "matched" if matched else "skipped"
+        print(f"[store:{status}] {_format_store_record_debug(record)}", flush=True)
 
 
 async def _playwright_navigate(
@@ -917,48 +1062,30 @@ async def discover_store_names_playwright(page: Any, start_url: str, args: argpa
 
 
 async def count_stores_playwright(page: Any, start_url: str, args: argparse.Namespace) -> int:
-    """Count the number of stores available on the fulfillment page by clicking the search bar and counting options."""
+    """Count stores by extracting __NEXT_DATA__ from the fulfillment page HTML."""
     await _playwright_navigate(page, start_url, args, "counting stores")
-
-    await page.click(args.store_ribbon_button_selector, timeout=30000)
+    # Wait up to 30s for __NEXT_DATA__ to appear (Cloudflare JS challenge may redirect first)
     try:
-        await page.locator(args.store_change_link_selector).click(timeout=15000, force=True)
+        await page.wait_for_function(
+            "() => !!document.getElementById('__NEXT_DATA__')",
+            timeout=30000,
+        )
     except Exception:
-        try:
-            await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
-        except Exception:
-            href = await page.locator(args.store_change_link_selector).get_attribute("href")
-            if not href:
-                raise
-            await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
-
-    await page.wait_for_load_state("domcontentloaded")
-    await page.click(args.store_bar_selector, timeout=30000)
-    await page.wait_for_timeout(400)
-
-    options = page.locator("[role='option']")
-    seen: set[str] = set()
-    stagnation = 0
-    last_count = 0
-    last_seen_size = 0
-    for _ in range(60):
-        count = await options.count()
-        for index in range(count):
-            text = _clean_text(await options.nth(index).inner_text())
-            if text:
-                seen.add(text)
-        await page.keyboard.press("PageDown")
-        await page.wait_for_timeout(250)
-        if count == last_count and len(seen) == last_seen_size:
-            stagnation += 1
-        else:
-            stagnation = 0
-        last_count = count
-        last_seen_size = len(seen)
-        if stagnation >= 6:
-            break
+        pass
+    html = await page.content()
+    store_records = discover_store_records_from_html(html)
+    store_names = [record.name for record in store_records] or discover_store_names_from_html(html)
+    if not store_names:
+        raise RuntimeError(
+            "No store options were detected in Playwright HTML. "
+            f"[diag] HTML length={len(html)} has_next_data={'__NEXT_DATA__' in html}"
+        )
     store_cities = _normalize_store_cities(args.store_city)
-    filtered = _filter_store_names_by_city(list(seen), store_cities)
+    _print_store_record_debug(store_records, store_cities)
+    if store_records:
+        filtered = [record.name for record in _filter_store_records_by_city(store_records, store_cities)]
+    else:
+        filtered = _filter_store_names_by_city(store_names, store_cities)
     if store_cities:
         print(f"City filter applied ({', '.join(store_cities)}): {len(filtered)} stores matched")
     return len(filtered)
@@ -1884,15 +2011,22 @@ async def main() -> None:
                     f"has_storeName={_has_store_name}"
                 )
                 print(_diag, flush=True)
-                store_names = discover_store_names_from_html(html)
+                store_records = discover_store_records_from_html(html)
+                store_names = [record.name for record in store_records] or discover_store_names_from_html(html)
                 store_cities = _normalize_store_cities(args.store_city)
+                _print_store_record_debug(store_records, store_cities)
                 if not store_names:
                     raise RuntimeError(
                         "No store options were detected in provider HTML. "
                         "Try increasing --render-wait-ms or verify provider key/URL. "
                         + _diag
                     )
-                store_names = _filter_store_names_by_city(store_names, store_cities)
+                if store_records:
+                    store_names = [
+                        record.name for record in _filter_store_records_by_city(store_records, store_cities)
+                    ]
+                else:
+                    store_names = _filter_store_names_by_city(store_names, store_cities)
                 if store_cities and not store_names:
                     raise RuntimeError(
                         "No stores matched --store-city filter. "
