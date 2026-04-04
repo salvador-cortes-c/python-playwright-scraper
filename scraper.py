@@ -887,6 +887,19 @@ def _maybe_filter_top_level_categories(categories: list[CategoryLink]) -> list[C
     return filtered or categories
 
 
+def _as_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        digits = re.sub(r"[^0-9]", "", value)
+        if digits:
+            parsed = int(digits)
+            return parsed if parsed > 0 else None
+    return None
+
+
 def _collect_page_numbers_from_json(data: Any, page_numbers: set[int], depth: int = 0) -> None:
     if depth > 30:
         return
@@ -899,21 +912,21 @@ def _collect_page_numbers_from_json(data: Any, page_numbers: set[int], depth: in
 
     normalized_keys = {str(key).lower(): value for key, value in data.items()}
 
-    total_pages_value = normalized_keys.get("totalpages") or normalized_keys.get("pagecount")
-    if isinstance(total_pages_value, int) and total_pages_value > 0:
+    total_pages_value = _as_positive_int(normalized_keys.get("totalpages") or normalized_keys.get("pagecount"))
+    if total_pages_value:
         page_numbers.add(total_pages_value)
 
     total_items = None
     for key in ("totalitems", "totalproducts", "totalproductcount", "totalresults", "resultcount"):
-        value = normalized_keys.get(key)
-        if isinstance(value, int) and value > 0:
+        value = _as_positive_int(normalized_keys.get(key))
+        if value:
             total_items = value
             break
 
     page_size = None
     for key in ("pagesize", "itemsperpage", "resultsperpage", "perpage", "limit"):
-        value = normalized_keys.get(key)
-        if isinstance(value, int) and value > 0:
+        value = _as_positive_int(normalized_keys.get(key))
+        if value:
             page_size = value
             break
 
@@ -922,6 +935,44 @@ def _collect_page_numbers_from_json(data: Any, page_numbers: set[int], depth: in
 
     for value in data.values():
         _collect_page_numbers_from_json(value, page_numbers, depth + 1)
+
+
+def _collect_page_numbers_from_pagination_elements(soup: BeautifulSoup, page_numbers: set[int]) -> None:
+    containers = soup.select(
+        '[aria-label*="pagination" i], [data-testid*="pagination" i], nav, ul[class*="pagination" i], div[class*="pagination" i]'
+    )
+    seen_container_ids: set[int] = set()
+    for container in containers:
+        container_id = id(container)
+        if container_id in seen_container_ids:
+            continue
+        seen_container_ids.add(container_id)
+
+        text = container.get_text(" ", strip=True)
+        label = " ".join(
+            filter(
+                None,
+                [
+                    str(container.get("aria-label") or ""),
+                    str(container.get("data-testid") or ""),
+                    text,
+                ],
+            )
+        )
+        if not re.search(r"pagination|page\s*\d+|\b1\b.*\b2\b", label, re.IGNORECASE):
+            continue
+
+        for attr_value in container.find_all(attrs={"aria-label": True}):
+            match = re.search(r"page\s*(\d+)", str(attr_value.get("aria-label")), re.IGNORECASE)
+            if match:
+                page_numbers.add(int(match.group(1)))
+
+        numeric_tokens = re.findall(r"\b\d{1,3}\b", text)
+        if len(numeric_tokens) >= 2:
+            for token in numeric_tokens:
+                value = int(token)
+                if 1 <= value <= 500:
+                    page_numbers.add(value)
 
 
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
@@ -955,18 +1006,23 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
         for match in re.finditer(pattern, page_text, re.IGNORECASE):
             page_numbers.add(int(match.group(1)))
 
-    showing_match = re.search(
+    for pattern in (
         r"showing\s+(\d+)\s*[-–]\s*(\d+)\s+of\s+(\d+)\s+products?",
-        page_text,
-        re.IGNORECASE,
-    )
-    if showing_match:
+        r"(\d+)\s*[-–]\s*(\d+)\s+of\s+(\d+)\s+products?",
+        r"showing\s+(\d+)\s+to\s+(\d+)\s+of\s+(\d+)",
+    ):
+        showing_match = re.search(pattern, page_text, re.IGNORECASE)
+        if not showing_match:
+            continue
         start_item = int(showing_match.group(1))
         end_item = int(showing_match.group(2))
         total_items = int(showing_match.group(3))
         if end_item >= start_item and total_items >= end_item:
             page_size = max(1, (end_item - start_item) + 1)
             page_numbers.add((total_items + page_size - 1) // page_size)
+            break
+
+    _collect_page_numbers_from_pagination_elements(soup, page_numbers)
 
     for script_tag in soup.find_all("script"):
         content = script_tag.string or script_tag.get_text() or ""

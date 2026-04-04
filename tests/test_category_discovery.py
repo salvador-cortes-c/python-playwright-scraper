@@ -240,9 +240,9 @@ class CategoryDiscoveryTests(unittest.TestCase):
               "pageProps": {
                 "search": {
                   "pagination": {
-                    "pageSize": 50,
-                    "totalItems": 212,
-                    "currentPage": 1
+                    "pageSize": "50",
+                    "totalItems": "212",
+                    "currentPage": "1"
                   }
                 }
               }
@@ -250,6 +250,28 @@ class CategoryDiscoveryTests(unittest.TestCase):
           }
           </script>
         </body></html>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1",
+            html=html,
+        )
+
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(
+            pages[-1],
+            "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
+        )
+
+    def test_discover_category_page_urls_uses_pagination_button_numbers(self):
+        html = '''
+        <nav aria-label="Pagination">
+          <button aria-label="Page 1">1</button>
+          <button aria-label="Page 2">2</button>
+          <button aria-label="Page 3">3</button>
+          <span>…</span>
+          <button aria-label="Page 5">5</button>
+        </nav>
         '''
 
         pages = discover_category_page_urls_from_html(
