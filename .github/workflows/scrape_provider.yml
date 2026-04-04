@@ -40,6 +40,10 @@ name: Daily Product Scrape
         description: 'Count number of categories from home page and exit'
         required: false
         default: 'false'
+      count_category_pages:
+        description: 'Discover and print the number of pages for each category'
+        required: false
+        default: 'false'
       scrape_all_stores:
         description: 'Playwright mode: scrape across all discovered stores'
         required: false
@@ -106,6 +110,7 @@ jobs:
           COUNT_ONLY="${{ github.event.inputs.count_only || 'false' }}"
           COUNT_STORES="${{ github.event.inputs.count_stores || 'false' }}"
           COUNT_CATEGORIES="${{ github.event.inputs.count_categories || 'false' }}"
+          COUNT_CATEGORY_PAGES="${{ github.event.inputs.count_category_pages || 'false' }}"
           SCRAPE_ALL_STORES="${{ github.event.inputs.scrape_all_stores || 'false' }}"
           STORE_CITY="${{ github.event.inputs.store_city || '' }}"
           MAX_STORES="${{ github.event.inputs.max_stores || '' }}"
@@ -123,6 +128,7 @@ jobs:
           echo "Count only: $COUNT_ONLY"
           echo "Count stores: $COUNT_STORES"
           echo "Count categories: $COUNT_CATEGORIES"
+          echo "Count category pages: $COUNT_CATEGORY_PAGES"
           echo "Scrape all stores: $SCRAPE_ALL_STORES"
           echo "Store city: ${STORE_CITY:-<none>}"
           echo "Persist DB: $PERSIST_DB"
@@ -223,6 +229,10 @@ jobs:
 
           if [ "$COUNT_ONLY" = "true" ]; then
             CMD+=(--count-only)
+          fi
+
+          if [ "$COUNT_CATEGORY_PAGES" = "true" ]; then
+            CMD+=(--count-category-pages)
           fi
 
           if [ -n "$STORE_NAME" ]; then
