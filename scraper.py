@@ -600,6 +600,57 @@ def _category_candidate_matches(candidate_name: str, candidate_url: str, categor
     return slug == target_slug or slug.startswith(f"{target_slug}-")
 
 
+def _find_groceries_container(root: BeautifulSoup, category_name_selector: str) -> Tag | BeautifulSoup:
+    best_match: tuple[int, Tag] | None = None
+    for text_node in root.find_all(string=re.compile(r"^\s*Groceries\s*$", re.IGNORECASE)):
+        current = text_node.parent
+        while isinstance(current, Tag):
+            category_nodes = [
+                node
+                for node in current.select(category_name_selector)
+                if _clean_text(node.get_text(" ", strip=True))
+            ]
+            category_link_count = len(current.select("a[href*='/shop/category/']"))
+            if 5 <= len(category_nodes) <= 40 and category_link_count >= 3:
+                if best_match is None or len(category_nodes) < best_match[0]:
+                    best_match = (len(category_nodes), current)
+            current = current.parent
+    return best_match[1] if best_match else root
+
+
+def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -> str | None:
+    search_roots: list[Tag] = []
+    if isinstance(node.parent, Tag):
+        search_roots.append(node.parent)
+        search_roots.extend(sibling for sibling in node.parent.find_next_siblings(limit=4) if isinstance(sibling, Tag))
+    search_roots.extend(sibling for sibling in node.find_next_siblings(limit=4) if isinstance(sibling, Tag))
+
+    seen_roots: set[int] = set()
+    for root in search_roots:
+        root_id = id(root)
+        if root_id in seen_roots:
+            continue
+        seen_roots.add(root_id)
+
+        anchors = root.select("a[href]")
+        for prefer_view_all in (True, False):
+            for anchor in anchors:
+                href = anchor.get("href")
+                if not href:
+                    continue
+                absolute = _normalize_category_url(urljoin(start_url, str(href)))
+                parsed = urlparse(absolute)
+                if not parsed.path.startswith("/shop/category/"):
+                    continue
+                anchor_name = _clean_text(anchor.get_text(" ", strip=True)) or _category_name_from_url(absolute)
+                is_view_all = bool(re.match(r"^view all\b", anchor_name, flags=re.IGNORECASE))
+                if prefer_view_all and not is_view_all:
+                    continue
+                if _category_candidate_matches(anchor_name, absolute, category_name):
+                    return absolute
+    return None
+
+
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     href_elements = soup.select("a[href*='pg=']")
@@ -646,17 +697,42 @@ def discover_category_urls_from_html(
     category_name_selector: str,
 ) -> list[CategoryLink]:
     soup = BeautifulSoup(html, "html.parser")
+    search_root = _find_groceries_container(soup, category_name_selector)
 
-    category_names = [_clean_text(node.get_text(" ", strip=True)) for node in soup.select(category_name_selector)]
+    category_nodes = search_root.select(category_name_selector)
+    category_names = [_clean_text(node.get_text(" ", strip=True)) for node in category_nodes]
     category_names = list(dict.fromkeys(name for name in category_names if name))
     if category_names:
+        if search_root is not soup:
+            print(f"Using Groceries navigation container with {len(category_names)} candidate category buttons")
         print(f"Detected category names ({len(category_names)}): {', '.join(category_names[:8])}")
 
-    links = soup.select(category_link_selector)
-    if not links:
-        links = soup.select("a[href]")
+    matched_categories: list[CategoryLink] = []
+    seen_urls: set[str] = set()
+    for node in category_nodes:
+        category_name = _clean_text(node.get_text(" ", strip=True))
+        if not category_name:
+            continue
+        category_url = _find_category_url_for_node(node, start_url, category_name)
+        if not category_url or category_url in seen_urls:
+            continue
+        seen_urls.add(category_url)
+        matched_categories.append(CategoryLink(name=category_name, url=category_url, source_url=start_url))
 
-    candidates: list[tuple[str, str, bool]] = []
+    if matched_categories:
+        print(
+            f"Matched top-level category URLs ({len(matched_categories)}): "
+            f"{', '.join(item.name for item in matched_categories[:8])}"
+        )
+        return matched_categories
+
+    links = search_root.select(category_link_selector)
+    if not links:
+        links = search_root.select("a[href]")
+
+    categories: list[CategoryLink] = []
+    seen: set[str] = set()
+
     for link in links:
         href = link.get("href")
         if not href:
@@ -666,57 +742,11 @@ def discover_category_urls_from_html(
         parsed = urlparse(absolute)
         if not parsed.path.startswith("/shop/category/"):
             continue
-
-        link_name = _clean_text(link.get_text(" ", strip=True)) or _category_name_from_url(absolute)
-        is_view_all = bool(re.match(r"^view all\b", link_name, flags=re.IGNORECASE))
-        candidates.append((link_name, absolute, is_view_all))
-
-    if category_names and candidates:
-        matched_categories: list[CategoryLink] = []
-        seen_urls: set[str] = set()
-        unmatched_names: list[str] = []
-
-        for category_name in category_names:
-            match: tuple[str, str, bool] | None = None
-            for prefer_view_all in (True, False):
-                for candidate in candidates:
-                    candidate_name, candidate_url, is_view_all = candidate
-                    if candidate_url in seen_urls:
-                        continue
-                    if prefer_view_all and not is_view_all:
-                        continue
-                    if _category_candidate_matches(candidate_name, candidate_url, category_name):
-                        match = candidate
-                        break
-                if match:
-                    break
-
-            if not match:
-                unmatched_names.append(category_name)
-                continue
-
-            _, candidate_url, _ = match
-            seen_urls.add(candidate_url)
-            matched_categories.append(CategoryLink(name=category_name, url=candidate_url, source_url=start_url))
-
-        if matched_categories:
-            print(
-                f"Matched top-level category URLs ({len(matched_categories)}): "
-                f"{', '.join(item.name for item in matched_categories[:8])}"
-            )
-            if unmatched_names:
-                print(
-                    f"WARNING: Could not match {len(unmatched_names)} top-level category names to a category URL"
-                )
-            return matched_categories
-
-    categories: list[CategoryLink] = []
-    seen: set[str] = set()
-
-    for link_name, absolute, _ in candidates:
         if absolute in seen:
             continue
+
         seen.add(absolute)
+        link_name = _clean_text(link.get_text(" ", strip=True)) or _category_name_from_url(absolute)
         cleaned_name = _clean_text(re.sub(r"^\s*view all\s+", "", link_name, flags=re.IGNORECASE))
         categories.append(CategoryLink(name=cleaned_name or _category_name_from_url(absolute), url=absolute, source_url=start_url))
 
