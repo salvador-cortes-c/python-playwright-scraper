@@ -188,6 +188,81 @@ class CategoryDiscoveryTests(unittest.TestCase):
             "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
         )
 
+    def test_discover_category_urls_prefers_direct_groceries_children_over_nested_lists(self):
+        html = '''
+        <html><body>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {
+              "pageProps": {
+                "navigation": [
+                  {
+                    "name": "Groceries",
+                    "children": [
+                      {"name": "Fruit & Vegetables", "url": "/shop/category/fruit-and-vegetables"},
+                      {"name": "Bakery", "url": "/shop/category/bakery"},
+                      {"name": "Frozen", "url": "/shop/category/frozen"}
+                    ],
+                    "items": [
+                      {"name": "Fruit & Vegetables", "url": "/shop/category/fruit-and-vegetables"},
+                      {"name": "Bakery", "url": "/shop/category/bakery"},
+                      {"name": "Frozen", "url": "/shop/category/frozen"},
+                      {"name": "Beer", "url": "/shop/category/beer-wine-and-cider/beer"},
+                      {"name": "In-Store Bakery", "url": "/shop/category/bakery/in-store-bakery"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+          </script>
+        </body></html>
+        '''
+
+        categories = discover_category_urls_from_html(
+            start_url="https://www.newworld.co.nz/",
+            html=html,
+            category_link_selector="a._7zlpdd._7zlpdc",
+            category_name_selector="button._7zlpdc",
+        )
+
+        self.assertEqual(
+            [category.name for category in categories],
+            ["Fruit & Vegetables", "Bakery", "Frozen"],
+        )
+
+    def test_discover_category_page_urls_uses_next_data_pagination_metadata(self):
+        html = '''
+        <html><body>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {
+              "pageProps": {
+                "search": {
+                  "pagination": {
+                    "pageSize": 50,
+                    "totalItems": 212,
+                    "currentPage": 1
+                  }
+                }
+              }
+            }
+          }
+          </script>
+        </body></html>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1",
+            html=html,
+        )
+
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(
+            pages[-1],
+            "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
