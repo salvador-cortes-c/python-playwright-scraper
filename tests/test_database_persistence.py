@@ -107,6 +107,18 @@ class DatabasePersistenceTests(unittest.TestCase):
 
         self.assertEqual(category_id, 22)
 
+    def test_find_category_id_matches_woolworths_browse_page_urls(self):
+        lookup = _build_category_lookup([
+            (44, "https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1&size=48"),
+        ])
+
+        category_id = _find_category_id_for_source_url(
+            lookup,
+            "https://www.woolworths.co.nz/shop/browse/fruit-veg?search=&page=3&size=48",
+        )
+
+        self.assertEqual(category_id, 44)
+
     def test_find_category_id_ignores_non_category_urls(self):
         lookup = _build_category_lookup([
             (33, "https://www.newworld.co.nz/shop/category/frozen?pg=1"),

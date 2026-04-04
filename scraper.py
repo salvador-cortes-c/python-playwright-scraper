@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-New World scraper using ScrapingBee with feature parity to the archive Playwright scraper
-where feasible in an API-based scraping workflow.
+NZ supermarket scraper with provider-based fetching and Playwright support for
+New World, Pak'nSave, and Woolworths-compatible category pages.
 """
 
 from __future__ import annotations
@@ -56,6 +56,107 @@ class RateLimitError(RuntimeError):
 
 class TransientError(RuntimeError):
     """Retriable network or server error (timeout, connection reset, empty response)."""
+
+
+_CATEGORY_PATH_PREFIXES = ("/shop/category/", "/shop/browse/")
+_DEFAULT_SITE_PROFILE = "newworld"
+_SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
+    "newworld": {
+        "product_selector": "div[data-testid^='product-'][data-testid$='-000']",
+        "name_selector": "[data-testid='product-title']",
+        "price_selector": "[data-testid='price-dollars']",
+        "price_cents_selector": "[data-testid='price-cents']",
+        "unit_price_selector": "[data-testid='non-promo-unit-price']",
+        "promo_price_dollars_selector": "#search > div > div:nth-child(3) > div > div:nth-child(19) > div._1afq4wy2 > div > div > div > div > div > p",
+        "promo_price_cents_selector": "#search > div > div:nth-child(3) > div > div:nth-child(19) > div._1afq4wy2 > div > div > div > div > div > div > p",
+        "promo_unit_price_selector": "#search > div > div:nth-child(3) > div > div:nth-child(19) > div._1afq4wy2 > div > div > div > div > p",
+        "image_selector": "[data-testid='product-image']",
+        "category_link_selector": "a._7zlpdd._7zlpdc, a[href*='/shop/category/']",
+        "category_name_selector": "button._7zlpdc, [data-testid='choose-store'], a[href*='/shop/category/']",
+        "store_ribbon_button_selector": "[data-testid='choose-store'], #ribbon button[aria-haspopup='dialog'], button[aria-label*='store' i], button[aria-label*='location' i]",
+        "store_change_link_selector": "#ribbon a[href], [data-testid='tooltip-choose-store'], a[href*='change-store' i], a[href*='/shop/fulfillment']",
+        "store_bar_selector": "#_r_8_, [role='combobox'], input[placeholder*='store' i], input[aria-label*='store' i]",
+    },
+    "paknsave": {
+        "product_selector": "div[data-testid^='product-'][data-testid$='-000']",
+        "name_selector": "[data-testid='product-title']",
+        "price_selector": "[data-testid='price-dollars']",
+        "price_cents_selector": "[data-testid='price-cents']",
+        "unit_price_selector": "[data-testid='non-promo-unit-price']",
+        "promo_price_dollars_selector": "",
+        "promo_price_cents_selector": "",
+        "promo_unit_price_selector": "",
+        "image_selector": "[data-testid='product-image']",
+        "category_link_selector": "a[href*='/shop/category/']",
+        "category_name_selector": "button, a[href*='/shop/category/']",
+        "store_ribbon_button_selector": "[data-testid='choose-store'], button[aria-label*='store' i], button[aria-label*='location' i], #ribbon button",
+        "store_change_link_selector": "[data-testid='tooltip-choose-store'], a[href*='change-store' i], a[href*='/shop/fulfillment']",
+        "store_bar_selector": "#_r_8_, [role='combobox'], input[placeholder*='store' i], input[aria-label*='store' i]",
+    },
+    "woolworths": {
+        "product_selector": "product-stamp-grid",
+        "name_selector": "h3[id$='-title'], div.product-entry h3",
+        "price_selector": "h3[id$='-price'] em, product-price h3 em",
+        "price_cents_selector": "h3[id$='-price'] span, product-price h3 span",
+        "unit_price_selector": "span.cupPrice, p.price-single-unit-text",
+        "promo_price_dollars_selector": "",
+        "promo_price_cents_selector": "",
+        "promo_unit_price_selector": ".noMemberCupPrice, .previousPrice",
+        "image_selector": "a.productImage-container img, figure img",
+        "wait_for_selector": "product-stamp-grid, h3[id$='-title']",
+        "category_link_selector": "a[href*='/shop/browse/']",
+        "category_name_selector": "a[href*='/shop/browse/'], nav a, button span",
+        "store_ribbon_button_selector": "button[aria-label*='location' i], button[aria-label*='pick up or delivery' i], [data-testid='select-store'], [data-testid='choose-store']",
+        "store_change_link_selector": "a[aria-label*='Change location' i], a[href*='change-location' i], a[href*='store']",
+        "store_bar_selector": "[role='combobox'], input[placeholder*='Search' i], input[aria-label*='Search' i]",
+        "open_category_menu_selector": "button:has-text('Browse')",
+    },
+}
+
+
+def _detect_site_profile(urls: list[str]) -> str:
+    for url in urls:
+        host = urlparse(str(url)).netloc.lower()
+        if "woolworths.co.nz" in host or "countdown.co.nz" in host:
+            return "woolworths"
+        if "paknsave.co.nz" in host:
+            return "paknsave"
+        if "newworld.co.nz" in host:
+            return "newworld"
+    return _DEFAULT_SITE_PROFILE
+
+
+def _apply_site_profile_defaults(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    requested = getattr(args, "site_profile", "auto")
+    profile_name = _detect_site_profile(getattr(args, "url", []) or []) if requested == "auto" else requested
+    profile_defaults = _SITE_PROFILE_DEFAULTS.get(profile_name, {})
+    args.site_profile = profile_name
+
+    for option_name, option_value in profile_defaults.items():
+        if getattr(args, option_name, None) == parser.get_default(option_name):
+            setattr(args, option_name, option_value)
+
+
+def _is_category_like_path(path: str) -> bool:
+    normalized_path = str(path or "").rstrip("/") or str(path or "")
+    return any(normalized_path.startswith(prefix) for prefix in _CATEGORY_PATH_PREFIXES)
+
+
+def _is_category_like_url(url: str) -> bool:
+    return _is_category_like_path(urlparse(url).path)
+
+
+def _page_query_name_for_url(url: str) -> str:
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if "page" in query:
+        return "page"
+    if "pg" in query:
+        return "pg"
+    host = parsed.netloc.lower()
+    if "woolworths.co.nz" in host or "countdown.co.nz" in host or parsed.path.startswith("/shop/browse/"):
+        return "page"
+    return "pg"
 
 
 def _compute_backoff(attempt: int, base_seconds: float, max_seconds: float) -> float:
@@ -483,6 +584,37 @@ def _element_nth_in_parent(card: Tag) -> int:
     return 1
 
 
+def _select_product_cards(soup: BeautifulSoup, product_selector: str) -> list[Tag]:
+    if not product_selector:
+        return []
+    try:
+        candidates = soup.select(product_selector)
+    except Exception:
+        return []
+
+    candidate_ids = {id(card) for card in candidates}
+    selected: list[Tag] = []
+    seen_signatures: set[str] = set()
+    for card in candidates:
+        if any(id(parent) in candidate_ids for parent in card.parents if isinstance(parent, Tag)):
+            continue
+        signature = f"{card.name}|{_clean_text(card.get_text(' ', strip=True))[:160]}"
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        selected.append(card)
+    return selected
+
+
+def _extract_price_parts(dollars_text: str, cents_text: str) -> tuple[str, str]:
+    dollars_match = re.search(r"\d+", str(dollars_text or ""))
+    cents_match = re.search(r"\d{1,2}", str(cents_text or "").replace(".", " "))
+    return (
+        dollars_match.group(0) if dollars_match else "",
+        cents_match.group(0) if cents_match else "",
+    )
+
+
 def _safe_select_one(root: BeautifulSoup | Tag, selector: str) -> Tag | None:
     if not selector:
         return None
@@ -519,14 +651,23 @@ def _text_for_card_selector(soup: BeautifulSoup, card: Tag, selector: str, nth_i
 
 def _get_supermarket_name(soup: BeautifulSoup) -> str:
     marker = _safe_select_one(soup, '[data-testid="choose-store"]')
-    if not marker:
-        return ""
+    if marker:
+        text = _clean_text(marker.get_text(" ", strip=True))
+        lowered = text.lower()
+        if lowered not in {"choose store", "choose a store", "select store", "select a store"}:
+            return text
 
-    text = _clean_text(marker.get_text(" ", strip=True))
-    lowered = text.lower()
-    if lowered in {"choose store", "choose a store", "select store", "select a store"}:
-        return ""
-    return text
+    body_text = _clean_text(soup.get_text(" ", strip=True))
+    for pattern in (
+        r"seeing information for the\s+(.+?)\s+area",
+        r"current(?:ly)?\s+shopping\s+at\s+(.+?)(?:\.|$)",
+        r"selected\s+store\s*[:\-]\s*(.+?)(?:\.|$)",
+    ):
+        match = re.search(pattern, body_text, re.IGNORECASE)
+        if match:
+            return _clean_text(match.group(1))
+
+    return ""
 
 
 def _is_bot_challenge(response_status: int | None, title: str, body_preview: str) -> bool:
@@ -565,8 +706,9 @@ def _extract_packaging_format(unit_price: str) -> str:
 
 def _with_page_number(url: str, page_number: int) -> str:
     parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-    query["pg"] = [str(page_number)]
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    page_param = _page_query_name_for_url(url)
+    query[page_param] = [str(page_number)]
     updated_query = urlencode(query, doseq=True)
     return urlunparse(parsed._replace(query=updated_query))
 
@@ -583,10 +725,11 @@ def _normalize_category_label(value: str) -> str:
 
 def _normalize_category_url(url: str) -> str:
     parsed = urlparse(url)
-    if not parsed.path.startswith("/shop/category/"):
+    if not _is_category_like_path(parsed.path):
         return url
     query = parse_qs(parsed.query, keep_blank_values=True)
-    query.setdefault("pg", ["1"])
+    page_param = _page_query_name_for_url(url)
+    query.setdefault(page_param, ["1"])
     return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
@@ -611,7 +754,7 @@ def _find_groceries_container(root: BeautifulSoup, category_name_selector: str) 
                 for node in current.select(category_name_selector)
                 if _clean_text(node.get_text(" ", strip=True))
             ]
-            category_link_count = len(current.select("a[href*='/shop/category/']"))
+            category_link_count = len(current.select("a[href*='/shop/category/'], a[href*='/shop/browse/']"))
             if 5 <= len(category_nodes) <= 40 and category_link_count >= 3:
                 if best_match is None or len(category_nodes) < best_match[0]:
                     best_match = (len(category_nodes), current)
@@ -641,7 +784,7 @@ def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -
                     continue
                 absolute = _normalize_category_url(urljoin(start_url, str(href)))
                 parsed = urlparse(absolute)
-                if not parsed.path.startswith("/shop/category/"):
+                if not _is_category_like_path(parsed.path):
                     continue
                 anchor_name = _clean_text(anchor.get_text(" ", strip=True)) or _category_name_from_url(absolute)
                 is_view_all = bool(re.match(r"^view all\b", anchor_name, flags=re.IGNORECASE))
@@ -678,10 +821,15 @@ def _first_category_json_text(item: dict[str, Any]) -> str:
 
 def _is_root_category_url(url: str) -> bool:
     parsed = urlparse(url)
-    if not parsed.path.startswith("/shop/category/"):
-        return False
-    remainder = parsed.path[len("/shop/category/") :].strip("/")
-    return bool(remainder) and "/" not in remainder
+    normalized_path = parsed.path.rstrip("/") or parsed.path
+
+    for prefix in _CATEGORY_PATH_PREFIXES:
+        if not normalized_path.startswith(prefix):
+            continue
+        remainder = normalized_path[len(prefix) :].strip("/")
+        return bool(remainder) and "/" not in remainder
+
+    return False
 
 
 def _normalize_category_candidate_url(raw_url: Any, start_url: str) -> str:
@@ -811,7 +959,7 @@ def discover_category_urls_from_json(start_url: str, html: str) -> list[Category
         content = script_tag.string or script_tag.get_text() or ""
         if not content:
             continue
-        if tag_id != "__NEXT_DATA__" and "/shop/category/" not in content:
+        if tag_id != "__NEXT_DATA__" and "/shop/category/" not in content and "/shop/browse/" not in content:
             continue
         json_text = re.sub(r"^\s*\w[\w.]*\s*=\s*", "", content.strip())
         try:
@@ -868,6 +1016,18 @@ _TOP_LEVEL_CATEGORY_LABEL_HINTS = frozenset(
         "pets",
         "pet care",
         "snacks treats and easy meals",
+        "fruit veg",
+        "meat seafood deli",
+        "fridge dairy and eggs",
+        "freezer",
+        "freezer foods",
+        "bakery desserts",
+        "snacks confectionery",
+        "beer cider and wine",
+        "health and beauty",
+        "cleaning and household",
+        "baby and child",
+        "fresh foods and bakery",
     }
 )
 
@@ -1022,14 +1182,15 @@ def _collect_page_numbers_from_raw_html(html: str, page_numbers: set[int]) -> No
 
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
-    href_elements = soup.select("a[href*='pg=']")
+    href_elements = soup.select("a[href*='pg='], a[href*='page=']")
 
     start_parsed = urlparse(start_url)
     page_numbers: set[int] = set()
+    page_param = _page_query_name_for_url(start_url)
 
-    current_pg = parse_qs(start_parsed.query).get("pg", ["1"])[0]
-    if str(current_pg).isdigit():
-        page_numbers.add(int(current_pg))
+    current_page = parse_qs(start_parsed.query).get(page_param, ["1"])[0]
+    if str(current_page).isdigit():
+        page_numbers.add(int(current_page))
 
     for anchor in href_elements:
         href = anchor.get("href")
@@ -1041,8 +1202,8 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
         if parsed.path != start_parsed.path:
             continue
 
-        pg_values = parse_qs(parsed.query).get("pg", [])
-        for value in pg_values:
+        page_values = parse_qs(parsed.query).get(page_param, [])
+        for value in page_values:
             if str(value).isdigit():
                 page_numbers.add(int(value))
 
@@ -1066,6 +1227,29 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
             page_size = max(1, (end_item - start_item) + 1)
             page_numbers.add((total_items + page_size - 1) // page_size)
             break
+
+    query_page_size = None
+    for key in ("size", "pageSize", "pagesize", "limit"):
+        value = parse_qs(start_parsed.query).get(key, [""])[0]
+        if str(value).isdigit():
+            query_page_size = int(value)
+            break
+
+    if not query_page_size:
+        detected_page_size = len(
+            _select_product_cards(
+                soup,
+                "div[data-testid^='product-'][data-testid$='-000'], product-stamp-grid, div.product-entry",
+            )
+        )
+        if detected_page_size > 0:
+            query_page_size = detected_page_size
+
+    if query_page_size:
+        for match in re.finditer(r"\b(\d{2,6})\s+(?:items|products?)\b", page_text, re.IGNORECASE):
+            total_items = int(match.group(1))
+            if total_items >= query_page_size:
+                page_numbers.add((total_items + query_page_size - 1) // query_page_size)
 
     _collect_page_numbers_from_pagination_elements(soup, page_numbers)
 
@@ -1131,7 +1315,7 @@ def discover_category_urls_from_html(
 
         absolute = _normalize_category_url(urljoin(start_url, str(href)))
         parsed = urlparse(absolute)
-        if not parsed.path.startswith("/shop/category/"):
+        if not _is_category_like_path(parsed.path):
             continue
 
         link_name = _clean_text(link.get_text(" ", strip=True)) or _category_name_from_url(absolute)
@@ -1532,11 +1716,17 @@ async def _playwright_navigate(
             f"Bot challenge detected while {purpose}. Waiting {args.manual_wait_seconds}s for manual verification..."
         )
         await page.wait_for_timeout(max(0, int(args.manual_wait_seconds)) * 1000)
+        title = _clean_text(await page.title()).lower()
+        body_preview = _clean_text((await page.locator("body").inner_text())[:1200]).lower()
+        challenge_detected = _is_bot_challenge(response_status, title, body_preview)
 
-    if challenge_detected and not args.headed:
+    if challenge_detected:
+        remediation = "Re-run with --provider playwright --headed --manual-wait-seconds 60"
+        if args.headed:
+            remediation += " after completing the browser verification"
+        remediation += ", or use a supported API provider."
         raise RuntimeError(
-            "Target page returned a bot challenge (Cloudflare). "
-            "Re-run with --provider playwright --headed --manual-wait-seconds 60."
+            "Target page returned a bot challenge (Cloudflare). " + remediation
         )
 
 
@@ -1685,6 +1875,12 @@ async def discover_category_urls_playwright(
     args: argparse.Namespace,
 ) -> list[CategoryLink]:
     await _playwright_navigate(page, start_url, args, "discovering category URLs")
+    if getattr(args, "open_category_menu_selector", None):
+        try:
+            await page.locator(args.open_category_menu_selector).first.click(timeout=5000)
+            await page.wait_for_timeout(750)
+        except Exception:
+            pass
     html = await page.content()
     return discover_category_urls_from_html(
         start_url=start_url,
@@ -2052,7 +2248,7 @@ def scrape_products_from_html(
     soup = BeautifulSoup(html, "html.parser")
     supermarket_name = _get_supermarket_name(soup)
 
-    cards = soup.select(product_selector)
+    cards = _select_product_cards(soup, product_selector)
     query_normalized = query.strip().lower() if query else ""
 
     products: list[Product] = []
@@ -2106,14 +2302,13 @@ def scrape_products_from_html(
             if src and isinstance(src, str):
                 image = urljoin(url, src)
 
-        cleaned_cents = price_cents.replace(".", "").strip()
-        price = f"{price_dollars}.{cleaned_cents}" if price_dollars and cleaned_cents else price_dollars
+        price_dollars_clean, cleaned_cents = _extract_price_parts(price_dollars, price_cents)
+        price = f"{price_dollars_clean}.{cleaned_cents.zfill(2)}" if price_dollars_clean and cleaned_cents else price_dollars_clean
 
         promo_price = ""
-        promo_cents_cleaned = promo_price_cents.replace(".", "").strip()
-        promo_dollars_cleaned = promo_price_dollars.strip()
+        promo_dollars_cleaned, promo_cents_cleaned = _extract_price_parts(promo_price_dollars, promo_price_cents)
         if promo_dollars_cleaned and promo_cents_cleaned:
-            promo_price = f"{promo_dollars_cleaned}.{promo_cents_cleaned}"
+            promo_price = f"{promo_dollars_cleaned}.{promo_cents_cleaned.zfill(2)}"
         elif promo_dollars_cleaned:
             promo_price = promo_dollars_cleaned
 
@@ -2230,7 +2425,7 @@ async def fetch_html_or_raise(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Scrape New World products")
+    parser = argparse.ArgumentParser(description="Scrape NZ supermarket products")
     parser.add_argument(
         "--url",
         action="append",
@@ -2286,6 +2481,11 @@ async def main() -> None:
         "--wait-for-selector",
         default=None,
         help="Optional selector to wait for before scraping (Playwright mode only).",
+    )
+    parser.add_argument(
+        "--open-category-menu-selector",
+        default=None,
+        help="Optional Playwright selector to open a browse/category menu before discovering category URLs.",
     )
     parser.add_argument("--query", default=None, help="Optional name filter")
     parser.add_argument("--limit", type=int, default=20, help="Maximum products to return per URL")
@@ -2472,6 +2672,12 @@ async def main() -> None:
         help="Scraping provider/engine to use (default: scrapingbee).",
     )
     parser.add_argument(
+        "--site-profile",
+        default="auto",
+        choices=["auto", "newworld", "paknsave", "woolworths"],
+        help="Auto-detect selector defaults from the URL, or force a supermarket-specific profile.",
+    )
+    parser.add_argument(
         "--country-code",
         default="nz",
         help="Country code for proxy targeting (default: nz).",
@@ -2519,9 +2725,11 @@ async def main() -> None:
     args = parser.parse_args()
     if args.count_category_pages:
         args.count_only = True
+    _apply_site_profile_defaults(args, parser)
 
     provider_name: str = args.provider
     run_started_at = datetime.now(timezone.utc)
+    print(f"Using retailer profile: {args.site_profile}")
     if provider_name == "playwright":
         await run_playwright_mode(args)
         return

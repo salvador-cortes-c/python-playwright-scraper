@@ -4,10 +4,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper import discover_category_page_urls_from_html, discover_category_urls_from_html
+from scraper import (
+    _detect_site_profile,
+    discover_category_page_urls_from_html,
+    discover_category_urls_from_html,
+    scrape_products_from_html,
+)
 
 
 class CategoryDiscoveryTests(unittest.TestCase):
+    def test_detect_site_profile_recognizes_supported_supermarkets(self):
+        self.assertEqual(_detect_site_profile(["https://www.woolworths.co.nz/shop/browse/fruit-veg"]), "woolworths")
+        self.assertEqual(
+            _detect_site_profile(["https://www.paknsave.co.nz/shop/category/fresh-foods-and-bakery/fruit-vegetables?pg=1"]),
+            "paknsave",
+        )
+        self.assertEqual(_detect_site_profile(["https://www.newworld.co.nz/shop/category/frozen?pg=1"]), "newworld")
+
     def test_discover_category_urls_prefers_view_all_links_for_top_level_categories(self):
         html = '''
         <div class="menu">
@@ -304,6 +317,101 @@ class CategoryDiscoveryTests(unittest.TestCase):
             pages[-1],
             "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
         )
+
+    def test_discover_category_urls_supports_woolworths_browse_routes(self):
+        html = '''
+        <section>
+          <a href="/shop/browse/fruit-veg">Fruit &amp; Veg</a>
+          <a href="/shop/browse/meat-seafood">Meat, Seafood &amp; Deli</a>
+          <a href="/shop/browse/bakery">Bakery</a>
+        </section>
+        '''
+
+        categories = discover_category_urls_from_html(
+            start_url="https://www.woolworths.co.nz/",
+            html=html,
+            category_link_selector="a[href*='/shop/browse/']",
+            category_name_selector="a[href*='/shop/browse/']",
+        )
+
+        self.assertEqual(
+            [category.url for category in categories],
+            [
+                "https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1",
+                "https://www.woolworths.co.nz/shop/browse/meat-seafood?page=1",
+                "https://www.woolworths.co.nz/shop/browse/bakery?page=1",
+            ],
+        )
+
+    def test_discover_category_page_urls_supports_woolworths_page_and_size_params(self):
+        html = '''
+        <div id="totalItemsCount">370 items</div>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.woolworths.co.nz/shop/browse/fruit-veg?search=&page=1&size=48&sort=BrowseRelevance",
+            html=html,
+        )
+
+        self.assertEqual(len(pages), 8)
+        self.assertEqual(
+            pages[-1],
+            "https://www.woolworths.co.nz/shop/browse/fruit-veg?search=&page=8&size=48&sort=BrowseRelevance",
+        )
+
+    def test_scrape_products_from_html_supports_woolworths_markup(self):
+        html = '''
+        <cdx-card>
+          <product-stamp-grid>
+            <div class="product-entry product-cup">
+              <a class="productImage-container" href="/shop/productdetails?stockcode=133211&amp;name=fresh-fruit-bananas-yellow-loose">
+                <figure>
+                  <img src="https://assets.woolworths.com.au/images/2010/133211.jpg" alt="fresh fruit bananas yellow loose">
+                </figure>
+              </a>
+              <a href="/shop/productdetails?stockcode=133211&amp;name=fresh-fruit-bananas-yellow-loose">
+                <h3 id="product-133211-title"> fresh fruit bananas yellow loose </h3>
+              </a>
+              <div class="product-meta">
+                <div class="priceMeta cupPriceAdjustment" id="product-133211-unitPrice">
+                  <div class="cupPriceContainer">
+                    <span class="cupPrice">$3.30 / 1kg</span>
+                  </div>
+                </div>
+              </div>
+              <product-price>
+                <div class="priceCupAdjustmentDev">
+                  <h3 class="heading--2 presentPrice priceCupAdjustment" id="product-133211-price" aria-label="$3.30 per kg.">
+                    $ <em>3</em><span> 30 <br>kg</span>
+                  </h3>
+                </div>
+              </product-price>
+            </div>
+          </product-stamp-grid>
+        </cdx-card>
+        '''
+
+        products, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.woolworths.co.nz/shop/browse/fruit-veg?search=&page=1&size=48&sort=BrowseRelevance",
+            product_selector="product-stamp-grid, div.product-entry",
+            name_selector="h3[id$='-title'], div.product-entry h3",
+            price_selector="h3[id$='-price'] em, product-price h3 em",
+            price_cents_selector="h3[id$='-price'] span, product-price h3 span",
+            unit_price_selector="span.cupPrice",
+            promo_price_dollars_selector="",
+            promo_price_cents_selector="",
+            promo_unit_price_selector="",
+            image_selector="a.productImage-container img, figure img",
+            limit=5,
+            query=None,
+        )
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(products[0].name, "fresh fruit bananas yellow loose")
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].price, "3.30")
+        self.assertEqual(snapshots[0].unit_price, "$3.30 / 1kg")
 
 
 if __name__ == "__main__":

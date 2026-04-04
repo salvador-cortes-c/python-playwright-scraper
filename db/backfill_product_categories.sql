@@ -14,6 +14,7 @@ WITH matched_links AS (
       ON regexp_replace(split_part(lower(ps.source_url), '?', 1), '/+$', '') =
          regexp_replace(split_part(lower(c.url), '?', 1), '/+$', '')
     WHERE split_part(lower(ps.source_url), '?', 1) LIKE '%/shop/category/%'
+       OR split_part(lower(ps.source_url), '?', 1) LIKE '%/shop/browse/%'
 ),
 inserted AS (
     INSERT INTO product_categories (product_key, category_id)

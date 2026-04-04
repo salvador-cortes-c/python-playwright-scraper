@@ -1,6 +1,16 @@
-# New World Scraper
+# NZ Supermarket Scraper
 
-Scrapes product names, prices, unit prices, promo prices, and images from New World category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, Zenrows, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
+Scrapes product names, prices, unit prices, promo prices, and images from supported NZ supermarket category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, ZenRows, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
+
+## Supported supermarkets
+
+| Supermarket | Auto-detected profile | Typical category route |
+|---|---|---|
+| New World | `newworld` | `https://www.newworld.co.nz/shop/category/...?...pg=1` |
+| Pak'nSave | `paknsave` | `https://www.paknsave.co.nz/shop/category/...?...pg=1` |
+| Woolworths NZ | `woolworths` | `https://www.woolworths.co.nz/shop/browse/...?...page=1` |
+
+> The scraper now auto-detects the right selector profile from the URL. You can still force one with `--site-profile` if needed.
 
 ## Setup
 
@@ -68,6 +78,32 @@ python scraper.py \
   --limit 20 \
   --output products.json
 ```
+
+Low-credit Woolworths example using local Playwright instead of a paid proxy API:
+
+```bash
+python scraper.py \
+  --provider playwright \
+  --url "https://www.woolworths.co.nz/shop/browse/fruit-veg" \
+  --site-profile woolworths \
+  --limit 20 \
+  --output woolworths_products.json
+```
+
+Pak'nSave example using the same category-style route shape as New World:
+
+```bash
+python scraper.py \
+  --provider playwright \
+  --url "https://www.paknsave.co.nz/shop/category/fresh-foods-and-bakery/fruit-vegetables?pg=1" \
+  --site-profile paknsave \
+  --headed \
+  --manual-wait-seconds 60 \
+  --limit 20 \
+  --output paknsave_products.json
+```
+
+> Pak'nSave can present a Cloudflare verification page to direct/headless requests. Using local headed Playwright first is the lowest-credit option.
 
 Scrape all pages of a category automatically:
 

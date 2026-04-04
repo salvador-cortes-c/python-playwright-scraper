@@ -37,6 +37,7 @@ WITH snapshot_paths AS (
         COUNT(DISTINCT product_key) AS product_count
     FROM price_snapshots
     WHERE split_part(lower(source_url), '?', 1) LIKE '%/shop/category/%'
+       OR split_part(lower(source_url), '?', 1) LIKE '%/shop/browse/%'
     GROUP BY 1
 ),
 category_paths AS (

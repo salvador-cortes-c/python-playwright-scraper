@@ -1,8 +1,19 @@
 WITH normalized AS (
     UPDATE price_snapshots
-    SET source_url = regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?pg=1'
-    WHERE source_url LIKE '%/shop/category/%'
-      AND source_url <> regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?pg=1'
+    SET source_url = CASE
+        WHEN source_url LIKE '%/shop/browse/%'
+            THEN regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?page=1'
+        ELSE regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?pg=1'
+    END
+    WHERE (
+            source_url LIKE '%/shop/category/%'
+         OR source_url LIKE '%/shop/browse/%'
+    )
+      AND source_url <> CASE
+        WHEN source_url LIKE '%/shop/browse/%'
+            THEN regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?page=1'
+        ELSE regexp_replace(split_part(source_url, '?', 1), '/+$', '') || '?pg=1'
+    END
     RETURNING id
 )
 SELECT COUNT(*) AS normalized_category_source_urls

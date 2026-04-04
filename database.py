@@ -9,6 +9,9 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import psycopg
 
 
+_CATEGORY_PATH_PREFIXES = ("/shop/category/", "/shop/browse/")
+
+
 @dataclass
 class PersistStats:
     products_upserted: int = 0
@@ -34,6 +37,23 @@ def _parse_price_to_cents(value: str | None) -> int | None:
         return None
 
 
+def _is_category_like_path(path: str | None) -> bool:
+    normalized_path = str(path or "").rstrip("/") or str(path or "")
+    return any(normalized_path.startswith(prefix) for prefix in _CATEGORY_PATH_PREFIXES)
+
+
+def _page_query_name_for_url(url: str | None) -> str:
+    parsed = urlparse(str(url or ""))
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if "page" in query:
+        return "page"
+    if "pg" in query:
+        return "pg"
+    if parsed.path.startswith("/shop/browse/"):
+        return "page"
+    return "pg"
+
+
 def _canonical_category_url(url: str | None) -> str:
     raw = str(url or "").strip()
     if not raw:
@@ -41,11 +61,11 @@ def _canonical_category_url(url: str | None) -> str:
 
     parsed = urlparse(raw)
     normalized_path = parsed.path.rstrip("/") or parsed.path
-    if not normalized_path.startswith("/shop/category/"):
+    if not _is_category_like_path(normalized_path):
         return urlunparse(parsed._replace(path=normalized_path, fragment=""))
 
     query = parse_qs(parsed.query, keep_blank_values=True)
-    query["pg"] = ["1"]
+    query[_page_query_name_for_url(raw)] = ["1"]
     return urlunparse(
         parsed._replace(
             netloc=parsed.netloc.lower(),
@@ -63,7 +83,7 @@ def _category_lookup_keys(url: str | None) -> tuple[str, ...]:
 
     parsed = urlparse(raw)
     normalized_path = parsed.path.rstrip("/") or parsed.path
-    if not normalized_path.startswith("/shop/category/"):
+    if not _is_category_like_path(normalized_path):
         return ()
 
     candidates: list[str] = []
@@ -118,7 +138,7 @@ def _collect_category_rows(categories: Iterable, snapshots: Iterable) -> list[tu
         canonical_url = _canonical_category_url(url)
         if not canonical_url or canonical_url in seen_urls:
             return
-        if not urlparse(canonical_url).path.startswith("/shop/category/"):
+        if not _is_category_like_path(urlparse(canonical_url).path):
             return
         seen_urls.add(canonical_url)
         rows.append((name or _category_name_from_url(canonical_url), canonical_url, source_url or canonical_url))
@@ -139,7 +159,7 @@ def _canonical_snapshot_source_url(url: str | None) -> str:
         return ""
     parsed = urlparse(raw)
     normalized_path = parsed.path.rstrip("/") or parsed.path
-    if normalized_path.startswith("/shop/category/"):
+    if _is_category_like_path(normalized_path):
         return _canonical_category_url(raw)
     return urlunparse(parsed._replace(netloc=parsed.netloc.lower(), path=normalized_path, fragment=""))
 
