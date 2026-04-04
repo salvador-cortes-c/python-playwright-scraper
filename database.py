@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import psycopg
 
@@ -31,6 +32,105 @@ def _parse_price_to_cents(value: str | None) -> int | None:
         return int(round(float(cleaned) * 100))
     except Exception:
         return None
+
+
+def _canonical_category_url(url: str | None) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+
+    parsed = urlparse(raw)
+    normalized_path = parsed.path.rstrip("/") or parsed.path
+    if not normalized_path.startswith("/shop/category/"):
+        return urlunparse(parsed._replace(path=normalized_path, fragment=""))
+
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    query["pg"] = ["1"]
+    return urlunparse(
+        parsed._replace(
+            netloc=parsed.netloc.lower(),
+            path=normalized_path,
+            query=urlencode(query, doseq=True),
+            fragment="",
+        )
+    )
+
+
+def _category_lookup_keys(url: str | None) -> tuple[str, ...]:
+    raw = str(url or "").strip()
+    if not raw:
+        return ()
+
+    parsed = urlparse(raw)
+    normalized_path = parsed.path.rstrip("/") or parsed.path
+    if not normalized_path.startswith("/shop/category/"):
+        return ()
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        cleaned = str(value).strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            candidates.append(cleaned)
+
+    add(urlunparse(parsed._replace(netloc=parsed.netloc.lower(), path=normalized_path, fragment="")))
+    add(_canonical_category_url(raw))
+    add(urlunparse(parsed._replace(netloc=parsed.netloc.lower(), path=normalized_path, query="", fragment="")))
+    add(normalized_path.lower())
+
+    return tuple(candidates)
+
+
+def _build_category_lookup(rows: Iterable[tuple[int, str]]) -> dict[str, int]:
+    lookup: dict[str, int] = {}
+    for category_id, url in rows:
+        for key in _category_lookup_keys(str(url)):
+            lookup.setdefault(key, int(category_id))
+    return lookup
+
+
+def _find_category_id_for_source_url(category_lookup: dict[str, int], source_url: str | None) -> int | None:
+    for key in _category_lookup_keys(source_url):
+        category_id = category_lookup.get(key)
+        if category_id is not None:
+            return category_id
+    return None
+
+
+def _category_name_from_url(url: str | None) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    slug = (parsed.path.rstrip("/") or parsed.path).rsplit("/", 1)[-1]
+    if not slug:
+        return raw
+    return slug.replace("-", " ").replace("_", " ").strip().title() or raw
+
+
+def _collect_category_rows(categories: Iterable, snapshots: Iterable) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    seen_urls: set[str] = set()
+
+    def add(name: str, url: str, source_url: str) -> None:
+        canonical_url = _canonical_category_url(url)
+        if not canonical_url or canonical_url in seen_urls:
+            return
+        if not urlparse(canonical_url).path.startswith("/shop/category/"):
+            return
+        seen_urls.add(canonical_url)
+        rows.append((name or _category_name_from_url(canonical_url), canonical_url, source_url or canonical_url))
+
+    for category in categories:
+        add(getattr(category, "name", ""), getattr(category, "url", ""), getattr(category, "source_url", ""))
+
+    for snapshot in snapshots:
+        source_url = getattr(snapshot, "source_url", "")
+        add(_category_name_from_url(source_url), source_url, source_url)
+
+    return rows
 
 
 def _ensure_schema(conn: psycopg.Connection) -> None:
@@ -154,6 +254,9 @@ def persist_scrape_results(
     categories: Iterable,
 ) -> PersistStats:
     stats = PersistStats()
+    products = list(products)
+    snapshots = list(snapshots)
+    categories = list(categories)
 
     with psycopg.connect(database_url) as conn:
         _ensure_schema(conn)
@@ -179,7 +282,7 @@ def persist_scrape_results(
                 )
                 stats.products_upserted += 1
 
-            for category in categories:
+            for name, canonical_url, source_url in _collect_category_rows(categories, snapshots):
                 cur.execute(
                     """
                     INSERT INTO categories (name, url, source_url)
@@ -189,7 +292,7 @@ def persist_scrape_results(
                         name = EXCLUDED.name,
                         source_url = EXCLUDED.source_url;
                     """,
-                    (category.name, category.url, category.source_url),
+                    (name, canonical_url, source_url),
                 )
                 stats.categories_upserted += 1
 
@@ -220,10 +323,8 @@ def persist_scrape_results(
                 stats.stores_upserted += 1
 
         with conn.cursor() as cur:
-            category_url_to_id: dict[str, int] = {}
             cur.execute("SELECT id, url FROM categories")
-            for category_id, url in cur.fetchall():
-                category_url_to_id[str(url)] = int(category_id)
+            category_url_to_id = _build_category_lookup(cur.fetchall())
 
             run_id = _insert_crawl_run(
                 conn,
@@ -268,7 +369,7 @@ def persist_scrape_results(
                 )
                 stats.snapshots_inserted += 1
 
-                category_id = category_url_to_id.get(snapshot.source_url)
+                category_id = _find_category_id_for_source_url(category_url_to_id, snapshot.source_url)
                 if category_id is not None:
                     cur.execute(
                         """
