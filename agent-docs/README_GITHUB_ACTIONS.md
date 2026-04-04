@@ -1,7 +1,7 @@
-# GitHub Actions Automation for Playwright Scraper
+# GitHub Actions Automation for the NZ Supermarket Scraper
 
 ## Overview
-This document explains how to set up automated scraping using GitHub Actions. The scraper can run on a schedule without human intervention.
+This document explains how to set up automated scraping using GitHub Actions for `newworld`, `paknsave`, and `woolworths`. The scraper can run on a schedule without human intervention, and the workflows now default to the lowest-credit `playwright` path when possible.
 
 ## Setup Instructions
 
@@ -21,10 +21,10 @@ git push -u origin main
 
 ### 3. Available Workflows
 
-#### Daily Scrape (`scrape.yml`)
+#### Daily Scrape (`scrape_provider.yml`)
 - **Schedule**: Daily at 2 AM UTC
 - **Manual trigger**: Available from GitHub UI
-- **Parameters**: URL, limit, store name
+- **Parameters**: URL, `site_profile`, provider, limit, store name
 - **Output**: Artifacts with JSON data
 
 #### Test Scraper (`scrape-test.yml`)
@@ -48,7 +48,7 @@ After each run:
 ## Customization
 
 ### Change Schedule
-Edit `.github/workflows/scrape.yml`:
+Edit `.github/workflows/scrape_provider.yml`:
 ```yaml
 schedule:
   # Every 6 hours

@@ -9,13 +9,17 @@ name: Daily Product Scrape
   workflow_dispatch:
     inputs:
       url:
-        description: 'URL to scrape (optional)'
+        description: 'Optional start/category URL. Leave blank to use a low-credit default for the selected retailer profile.'
         required: false
-        default: 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1'
+        default: ''
+      site_profile:
+        description: 'Retailer selector profile: auto, newworld, paknsave, woolworths'
+        required: false
+        default: 'auto'
       provider:
-        description: 'Scraping provider/engine: scrapingbee, scraperapi, crawlbase, zenrows, direct, playwright'
+        description: 'Scraping provider/engine. `playwright` is the lowest-credit default; use a paid provider only when anti-bot protection requires it.'
         required: false
-        default: 'scraperapi'
+        default: 'playwright'
       limit:
         description: 'Max products to scrape'
         required: false
@@ -61,7 +65,7 @@ name: Daily Product Scrape
         required: false
         default: 'false'
       store_name:
-        description: 'Store name for Playwright mode (for example: New World Karori)'
+        description: "Store name for Playwright mode (for example: New World Karori, Pak'nSave Albany, Woolworths Grey Lynn)"
         required: false
         default: ''
 
@@ -89,7 +93,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ github.event.inputs.provider == 'playwright' }}
+        if: ${{ github.event.inputs.provider == 'playwright' || github.event.inputs.provider == '' || github.event_name == 'schedule' }}
         run: |
           python -m playwright install firefox
           python -m playwright install-deps firefox
@@ -102,8 +106,9 @@ jobs:
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          URL="${{ github.event.inputs.url || 'https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1' }}"
-          PROVIDER="${{ github.event.inputs.provider || 'scraperapi' }}"
+          URL="${{ github.event.inputs.url || '' }}"
+          SITE_PROFILE="${{ github.event.inputs.site_profile || 'auto' }}"
+          PROVIDER="${{ github.event.inputs.provider || 'playwright' }}"
           LIMIT="${{ github.event.inputs.limit || '20' }}"
           MAX_PAGES="${{ github.event.inputs.max_pages || '3' }}"
           DISCOVER_CATEGORY_URLS="${{ github.event.inputs.discover_category_urls || 'false' }}"
@@ -115,12 +120,46 @@ jobs:
           STORE_CITY="${{ github.event.inputs.store_city || '' }}"
           MAX_STORES="${{ github.event.inputs.max_stores || '' }}"
           PERSIST_DB="${{ github.event.inputs.persist_db || 'false' }}"
-          STORE_COUNT_URL="https://www.newworld.co.nz/shop/fulfillment"
-          CATEGORY_COUNT_URL="https://www.newworld.co.nz/"
           STORE_NAME="${{ github.event.inputs.store_name || '' }}"
+
+          detect_profile() {
+            case "$1" in
+              *woolworths.co.nz*|*countdown.co.nz*) echo "woolworths" ;;
+              *paknsave.co.nz*) echo "paknsave" ;;
+              *newworld.co.nz*) echo "newworld" ;;
+              *) echo "newworld" ;;
+            esac
+          }
+
+          if [ -n "$URL" ] && [ "$SITE_PROFILE" = "auto" ]; then
+            SITE_PROFILE="$(detect_profile "$URL")"
+          fi
+
+          case "$SITE_PROFILE" in
+            woolworths)
+              DEFAULT_URL="https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1&size=48"
+              STORE_COUNT_URL="https://www.woolworths.co.nz/shop"
+              CATEGORY_COUNT_URL="https://www.woolworths.co.nz/shop"
+              ;;
+            paknsave)
+              DEFAULT_URL="https://www.paknsave.co.nz/shop/category/fresh-foods-and-bakery/fruit-vegetables?pg=1"
+              STORE_COUNT_URL="https://www.paknsave.co.nz/shop/fulfillment"
+              CATEGORY_COUNT_URL="https://www.paknsave.co.nz/"
+              ;;
+            *)
+              DEFAULT_URL="https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1"
+              STORE_COUNT_URL="https://www.newworld.co.nz/shop/fulfillment"
+              CATEGORY_COUNT_URL="https://www.newworld.co.nz/"
+              ;;
+          esac
+
+          if [ -z "$URL" ]; then
+            URL="$DEFAULT_URL"
+          fi
           
           echo "Running scraper..."
           echo "Provider: $PROVIDER"
+          echo "Site profile: $SITE_PROFILE"
           echo "URL: $URL"
           echo "Limit: $LIMIT"
           echo "Max pages: $MAX_PAGES"
@@ -142,6 +181,7 @@ jobs:
             if [ "$COUNT_STORES" = "true" ]; then
               python scraper.py \
                 --provider "$PROVIDER" \
+                --site-profile "$SITE_PROFILE" \
                 --url "$STORE_COUNT_URL" \
                 --count-stores | tee /tmp/store_count.log
               STORE_COUNT=$(awk -F': ' '/^Total number of stores:/{print $2}' /tmp/store_count.log | tail -n 1)
@@ -151,6 +191,7 @@ jobs:
             if [ "$COUNT_CATEGORIES" = "true" ]; then
               python scraper.py \
                 --provider "$PROVIDER" \
+                --site-profile "$SITE_PROFILE" \
                 --url "$CATEGORY_COUNT_URL" \
                 --discover-category-urls \
                 --count-only | tee /tmp/category_count.log
@@ -200,6 +241,7 @@ jobs:
 
           CMD=(python scraper.py
             --provider "$PROVIDER"
+            --site-profile "$SITE_PROFILE"
             --url "$URL"
             --limit "$LIMIT"
             --max-pages "$MAX_PAGES"
@@ -264,7 +306,7 @@ jobs:
       - name: Upload scraped data
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-results-scraperapi
+          name: scrape-results
           path: |
             products.json
             price_snapshots.json
@@ -310,7 +352,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow run:** $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Provider:** ${{ github.event.inputs.provider || 'scraperapi' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Provider:** ${{ github.event.inputs.provider || 'playwright' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Site profile:** ${{ github.event.inputs.site_profile || 'auto' }}" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "**Manual run with URL:** ${{ github.event.inputs.url || 'default' }}" >> $GITHUB_STEP_SUMMARY
           fi

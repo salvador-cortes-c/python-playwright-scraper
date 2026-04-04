@@ -294,7 +294,7 @@ python scraper.py \
 
 ### Product selectors
 
-These CSS selectors are pre-configured for New World and rarely need to change. Override if the page structure changes.
+These CSS selectors are auto-filled from the active retailer profile (`newworld`, `paknsave`, or `woolworths`) and rarely need to change. Override them only if a site layout changes.
 
 | Flag | Default | Description |
 |---|---|---|
@@ -354,10 +354,10 @@ These flags are active only when `--provider playwright` is used.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Works with provider mode (recommended: `scrapingbee` with higher `--render-wait-ms`) and Playwright mode. |
+| `--count-stores` | off | Count the number of available stores from the fulfillment page and exit. Prefer `playwright` for the lowest-credit path; fall back to `zenrows` or another API provider only if anti-bot protection blocks the free route. |
 | `--store-city CITY` | none | Filter discovered stores by city name (case-insensitive). May be repeated or comma-separated. Affects `--count-stores` and Playwright `--scrape-all-stores` store discovery. |
 | `--choose-store` | off | Select a store before scraping. |
-| `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`. |
+| `--store-name NAME` | none | Choose a specific store by name, e.g. `New World Karori`, `Pak'nSave Albany`, or `Woolworths Grey Lynn`. |
 | `--store-names NAME` | none | Scrape only the specified store name(s). May be repeated or comma-separated. |
 | `--scrape-all-stores` | off | Iterate through all discovered stores and scrape the same URLs for each one. |
 | `--max-stores N` | unlimited | Optional cap when using `--scrape-all-stores`. |
@@ -413,16 +413,16 @@ The workflow `.github/workflows/scrape_provider.yml` runs daily at 2 AM UTC and 
 
 ### Count workflow (stores + categories)
 
-The workflow `.github/workflows/manual-test.yml` is a dedicated manual workflow for counting only, without running full product scraping.
+The workflow `.github/workflows/manual-test.yml` is a dedicated manual workflow for retailer-only checks without running a full scrape. It now supports `newworld`, `paknsave`, and `woolworths` via `--site-profile`-style inputs.
 
 How to run:
 
 1. Open **Actions** in GitHub.
-2. Select **Count Stores and Categories (Manual)**.
+2. Select **Count Retailer Metrics (Manual)**.
 3. Click **Run workflow**.
 4. Use branch `main` and confirm.
 
-This workflow uses ScrapingBee, so ensure repository secret `SCRAPING_PROVIDER_API_KEY` is set.
+This workflow defaults to `playwright` for the lowest-credit path. Switch to `zenrows` only if anti-bot protection blocks the free/browser-based route.
 
 Outputs:
 
@@ -458,13 +458,14 @@ No secret is needed for `direct` or `playwright` mode.
 
 | Input | Default | Description |
 |---|---|---|
-| `url` | fruit-and-vegetables page | Category URL to scrape. |
-| `provider` | `scraperapi` | Scraping provider/engine. Use `playwright` for real browser mode. |
+| `url` | retailer-specific example | Optional category/start URL to scrape. Leave blank to use the default for the selected retailer profile. |
+| `site_profile` | `auto` | Auto-detect or force `newworld`, `paknsave`, or `woolworths`. |
+| `provider` | `playwright` | Lowest-credit default. Switch to `zenrows`, `scraperapi`, etc. only when anti-bot protection blocks the free route. |
 | `limit` | `20` | Max products per page URL. Ignored when `count_only=true` because no products are scraped. |
 | `max_pages` | `3` | Max resolved page URLs to scrape in total. |
 | `discover_category_urls` | `false` | Start from the given URL, discover category URLs, then crawl each category. |
 | `count_only` | `false` | Only resolve/count URLs; skip scraping products. |
-| `store_name` | empty | Store name for Playwright mode, e.g. `New World Karori`. |
+| `store_name` | empty | Store name for Playwright mode, e.g. `New World Karori`, `Pak'nSave Albany`, or `Woolworths Grey Lynn`, `Pak'nSave Albany`, or `Woolworths Grey Lynn`. |
 
 ### Artifacts uploaded per run
 

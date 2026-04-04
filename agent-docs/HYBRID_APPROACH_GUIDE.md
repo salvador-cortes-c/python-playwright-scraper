@@ -1,7 +1,7 @@
 # 🔄 Hybrid Approach Guide: Free GitHub Actions + Local Cookie Refresh
 
 ## **Overview**
-This guide explains how to run the New World scraper for **free** using GitHub Actions, with periodic local cookie refreshes to bypass Cloudflare protection.
+This guide explains how to run the NZ supermarket scraper for **free** using GitHub Actions, with periodic local cookie refreshes to bypass Cloudflare protection. It applies best to `newworld` and `woolworths`; `paknsave` may still require manual verification or an API provider fallback when Cloudflare is stricter.
 
 ## **📊 How It Works**
 
@@ -70,8 +70,9 @@ git push origin main
 ### **Step 4: Automated Daily Scraping**
 - GitHub Actions will run **daily at 2 AM UTC**
 - Uses saved cookies from `storage_state.json`
+- The workflow defaults to the low-credit `playwright` path and auto-detects the retailer profile from the URL
 - Results saved as artifacts
-- **Completely automated!**
+- **Completely automated when the site is not actively challenging the session!**
 
 ## **🔄 Maintenance Schedule**
 
@@ -130,7 +131,7 @@ Error: Target page returned a bot challenge (Cloudflare)
 ## **🔧 Customization**
 
 ### **Change Scraping Schedule**
-Edit `.github/workflows/scrape.yml`:
+Edit `.github/workflows/scrape_provider.yml`:
 ```yaml
 schedule:
   # Current: Daily at 2 AM UTC

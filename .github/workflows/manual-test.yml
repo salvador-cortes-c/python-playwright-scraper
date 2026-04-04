@@ -1,8 +1,16 @@
-name: Count Stores and Categories (Manual)
+name: Count Retailer Metrics (Manual)
 
 on:
   workflow_dispatch:
     inputs:
+      site_profile:
+        description: "Retailer selector profile: auto, newworld, paknsave, woolworths"
+        required: false
+        default: "auto"
+      provider:
+        description: "Provider to use for the low-cost check. `playwright` is the default; switch to `zenrows` only if anti-bot protection blocks the run."
+        required: false
+        default: "playwright"
       store_city:
         description: "Optional city filter for stores (e.g. Wellington)"
         required: false
@@ -18,15 +26,16 @@ on:
         default: false
         type: boolean
       debug_url:
-        description: "Optional URL for the debug fetch (for example a specific category page)"
+        description: "Optional URL for the debug fetch (leave blank to use a retailer-specific default)"
         required: false
-        default: "https://www.newworld.co.nz/shop/fulfillment"
+        default: ""
 
 jobs:
   count-metrics:
     runs-on: ubuntu-latest
     env:
       ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+      PROVIDER: ${{ inputs.provider }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,7 +51,58 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        if: ${{ inputs.provider == 'playwright' }}
+        run: |
+          python -m playwright install firefox
+          python -m playwright install-deps firefox
+
+      - name: Resolve retailer defaults
+        run: |
+          set -euo pipefail
+          site='${{ inputs.site_profile }}'
+          debug_url='${{ inputs.debug_url }}'
+
+          detect_profile() {
+            case "$1" in
+              *woolworths.co.nz*|*countdown.co.nz*) echo "woolworths" ;;
+              *paknsave.co.nz*) echo "paknsave" ;;
+              *newworld.co.nz*) echo "newworld" ;;
+              *) echo "newworld" ;;
+            esac
+          }
+
+          if [ -n "$debug_url" ] && [ "$site" = "auto" ]; then
+            site="$(detect_profile "$debug_url")"
+          fi
+
+          case "$site" in
+            woolworths)
+              store_url='https://www.woolworths.co.nz/shop'
+              category_url='https://www.woolworths.co.nz/shop'
+              ;;
+            paknsave)
+              store_url='https://www.paknsave.co.nz/shop/fulfillment'
+              category_url='https://www.paknsave.co.nz/'
+              ;;
+            *)
+              site='newworld'
+              store_url='https://www.newworld.co.nz/shop/fulfillment'
+              category_url='https://www.newworld.co.nz/'
+              ;;
+          esac
+
+          if [ -z "$debug_url" ]; then
+            debug_url="$store_url"
+          fi
+
+          echo "SITE_PROFILE=$site" >> "$GITHUB_ENV"
+          echo "STORE_COUNT_URL=$store_url" >> "$GITHUB_ENV"
+          echo "CATEGORY_COUNT_URL=$category_url" >> "$GITHUB_ENV"
+          echo "DEBUG_URL=$debug_url" >> "$GITHUB_ENV"
+
       - name: Validate ZenRows key
+        if: ${{ inputs.provider == 'zenrows' }}
         run: |
           if [ -z "${ZENROWS_API_KEY:-}" ]; then
             echo "ZENROWS_API_KEY is not set in repository secrets"
@@ -54,27 +114,32 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          debug_url='${{ inputs.debug_url }}'
+          debug_url="${DEBUG_URL}"
           echo "Debug URL: $debug_url"
+          echo "Provider: ${PROVIDER}"
+          echo "Site profile: ${SITE_PROFILE}"
 
-          if [[ "$debug_url" == *"/shop/category/"* ]]; then
+          if [[ "$debug_url" == *"/shop/category/"* || "$debug_url" == *"/shop/browse/"* ]]; then
             python scraper.py \
-              --provider zenrows \
+              --provider "${PROVIDER}" \
+              --site-profile "${SITE_PROFILE}" \
               --url "$debug_url" \
               --render-wait-ms 12000 \
               --count-category-pages \
               --count-only \
               || true
-          elif [[ "$debug_url" == *"/shop/fulfillment"* ]]; then
+          elif [[ "$debug_url" == *"/shop/fulfillment"* || "$debug_url" == *"/shop"* ]]; then
             python scraper.py \
-              --provider zenrows \
+              --provider "${PROVIDER}" \
+              --site-profile "${SITE_PROFILE}" \
               --url "$debug_url" \
               --render-wait-ms 10000 \
               --count-stores \
               || true
           else
             python scraper.py \
-              --provider zenrows \
+              --provider "${PROVIDER}" \
+              --site-profile "${SITE_PROFILE}" \
               --url "$debug_url" \
               --render-wait-ms 10000 \
               --discover-category-urls \
@@ -82,7 +147,7 @@ jobs:
               || true
           fi
 
-      - name: Count stores via ZenRows
+      - name: Count stores
         id: count_stores
         run: |
           set -euo pipefail
@@ -94,8 +159,9 @@ jobs:
           fi
           set +e
           output=$(python scraper.py \
-            --provider zenrows \
-            --url "https://www.newworld.co.nz/shop/fulfillment" \
+            --provider "${PROVIDER}" \
+            --site-profile "${SITE_PROFILE}" \
+            --url "${STORE_COUNT_URL}" \
             --render-wait-ms 12000 \
             --count-stores \
             "${city_args[@]}")
@@ -112,7 +178,7 @@ jobs:
           fi
           echo "store_count=$store_count" >> "$GITHUB_OUTPUT"
 
-      - name: Count category pages via ZenRows
+      - name: Count category pages
         if: ${{ inputs.include_category_pages }}
         id: count_category_pages
         run: |
@@ -125,8 +191,9 @@ jobs:
           fi
           set +e
           output=$(python scraper.py \
-            --provider zenrows \
-            --url "https://www.newworld.co.nz/" \
+            --provider "${PROVIDER}" \
+            --site-profile "${SITE_PROFILE}" \
+            --url "${CATEGORY_COUNT_URL}" \
             --render-wait-ms 8000 \
             --discover-category-urls \
             --count-category-pages \
