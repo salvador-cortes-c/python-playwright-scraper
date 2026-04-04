@@ -81,6 +81,8 @@ _probe_selectors.py
 
 # Test scripts (generated)
 test_*.py
+!tests/
+!tests/test_*.py
 
 # Playwright browsers
 .playwright/
