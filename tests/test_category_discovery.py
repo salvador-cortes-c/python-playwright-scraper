@@ -104,6 +104,48 @@ class CategoryDiscoveryTests(unittest.TestCase):
             ],
         )
 
+    def test_discover_category_urls_can_use_next_data_groceries_tree(self):
+        html = '''
+        <html><body>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {
+              "pageProps": {
+                "navigation": [
+                  {
+                    "name": "Groceries",
+                    "children": [
+                      {"name": "Fruit & Vegetables", "url": "/shop/category/fruit-and-vegetables"},
+                      {"name": "Bakery", "href": "/shop/category/bakery?pg=1"},
+                      {"name": "Promo", "url": "/promo/easter"},
+                      {
+                        "name": "Frozen",
+                        "children": [
+                          {"label": "View all Frozen", "href": "/shop/category/frozen?pg=1"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+          </script>
+        </body></html>
+        '''
+
+        categories = discover_category_urls_from_html(
+            start_url="https://www.newworld.co.nz/",
+            html=html,
+            category_link_selector="a._7zlpdd._7zlpdc",
+            category_name_selector="button._7zlpdc",
+        )
+
+        self.assertEqual(
+            [category.name for category in categories],
+            ["Fruit & Vegetables", "Bakery", "Frozen"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -651,23 +651,108 @@ def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -
     return None
 
 
+_CATEGORY_JSON_NAME_KEYS = ("name", "title", "label", "displayName", "text")
+_CATEGORY_JSON_URL_KEYS = ("url", "href", "path")
+
+
+def _first_category_json_text(item: dict[str, Any]) -> str:
+    for key in _CATEGORY_JSON_NAME_KEYS:
+        value = item.get(key)
+        if isinstance(value, str):
+            cleaned = _clean_text(value)
+            if cleaned:
+                return cleaned
+    return ""
+
+
+def _normalize_category_candidate_url(raw_url: Any, start_url: str) -> str:
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        return ""
+    absolute = _normalize_category_url(urljoin(start_url, raw_url.strip()))
+    parsed = urlparse(absolute)
+    if not parsed.path.startswith("/shop/category/"):
+        return ""
+    return absolute
+
+
+def _collect_category_links_from_json(data: Any, start_url: str, out: dict[str, CategoryLink], depth: int = 0) -> None:
+    if depth > 30:
+        return
+    if isinstance(data, list):
+        for item in data:
+            _collect_category_links_from_json(item, start_url, out, depth + 1)
+        return
+    if not isinstance(data, dict):
+        return
+
+    name = _first_category_json_text(data)
+    for key in _CATEGORY_JSON_URL_KEYS:
+        absolute = _normalize_category_candidate_url(data.get(key), start_url)
+        if not absolute:
+            continue
+        cleaned_name = _clean_text(re.sub(r"^\s*view all\s+", "", name, flags=re.IGNORECASE))
+        out.setdefault(
+            absolute,
+            CategoryLink(
+                name=cleaned_name or _category_name_from_url(absolute),
+                url=absolute,
+                source_url=start_url,
+            ),
+        )
+
+    for value in data.values():
+        _collect_category_links_from_json(value, start_url, out, depth + 1)
+
+
+def discover_category_urls_from_json(start_url: str, html: str) -> list[CategoryLink]:
+    soup = BeautifulSoup(html, "html.parser")
+    categories_by_url: dict[str, CategoryLink] = {}
+
+    for script_tag in soup.find_all("script"):
+        tag_id = script_tag.get("id") or ""
+        content = script_tag.string or script_tag.get_text() or ""
+        if not content:
+            continue
+        if tag_id != "__NEXT_DATA__" and "/shop/category/" not in content:
+            continue
+        json_text = re.sub(r"^\s*\w[\w.]*\s*=\s*", "", content.strip())
+        try:
+            data = json.loads(json_text)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        _collect_category_links_from_json(data, start_url, categories_by_url)
+
+    categories = list(categories_by_url.values())
+    return _maybe_filter_top_level_categories(categories)
+
+
 _TOP_LEVEL_CATEGORY_LABEL_HINTS = frozenset(
     {
         "fruit and vegetables",
+        "meat",
         "meat poultry and seafood",
+        "poultry and seafood",
         "butchery and seafood",
+        "fridge",
         "fridge deli and eggs",
+        "deli and eggs",
         "dairy eggs and fridge",
         "bakery",
         "in store bakery",
         "frozen",
         "pantry",
         "drinks",
+        "beer",
         "beer wine and spirits",
+        "wine and spirits",
+        "health and beauty",
         "health beauty and baby",
+        "baby",
         "baby health and beauty",
+        "cleaning",
         "cleaning household",
         "cleaning laundry and paper",
+        "laundry and paper",
         "household cleaning and laundry",
         "pet care",
     }
@@ -735,6 +820,14 @@ def discover_category_urls_from_html(
     category_link_selector: str,
     category_name_selector: str,
 ) -> list[CategoryLink]:
+    json_categories = discover_category_urls_from_json(start_url=start_url, html=html)
+    if json_categories:
+        print(
+            f"Discovered category URLs from __NEXT_DATA__ ({len(json_categories)}): "
+            f"{', '.join(item.name for item in json_categories[:8])}"
+        )
+        return json_categories
+
     soup = BeautifulSoup(html, "html.parser")
     search_root = _find_groceries_container(soup, category_name_selector)
 
