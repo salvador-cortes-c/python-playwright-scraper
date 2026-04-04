@@ -70,6 +70,40 @@ class CategoryDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([category.name for category in categories], [label for label, _ in top_level])
 
+    def test_discover_category_urls_can_match_when_links_are_in_separate_container(self):
+        html = '''
+        <section>
+          <h2>Groceries</h2>
+          <div class="buttons">
+            <button class="_7zlpdc">Fruit & Vegetables</button>
+            <button class="_7zlpdc">Bakery</button>
+            <button class="_7zlpdc">Frozen</button>
+          </div>
+          <div></div><div></div><div></div><div></div><div></div>
+          <div class="links">
+            <a class="_7zlpdd _7zlpdc" href="/shop/category/frozen?pg=1">View all Frozen</a>
+            <a class="_7zlpdd _7zlpdc" href="/shop/category/fruit-and-vegetables?pg=1">View all Fruit & Vegetables</a>
+            <a class="_7zlpdd _7zlpdc" href="/shop/category/bakery?pg=1">View all Bakery</a>
+          </div>
+        </section>
+        '''
+
+        categories = discover_category_urls_from_html(
+            start_url="https://www.newworld.co.nz/",
+            html=html,
+            category_link_selector="a._7zlpdd._7zlpdc",
+            category_name_selector="button._7zlpdc",
+        )
+
+        self.assertEqual(
+            [category.url for category in categories],
+            [
+                "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1",
+                "https://www.newworld.co.nz/shop/category/bakery?pg=1",
+                "https://www.newworld.co.nz/shop/category/frozen?pg=1",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -746,6 +746,25 @@ def discover_category_urls_from_html(
             print(f"Using Groceries navigation container with {len(category_names)} candidate category buttons")
         print(f"Detected category names ({len(category_names)}): {', '.join(category_names[:8])}")
 
+    links = search_root.select(category_link_selector)
+    if not links:
+        links = search_root.select("a[href]")
+
+    candidates: list[tuple[str, str, bool]] = []
+    for link in links:
+        href = link.get("href")
+        if not href:
+            continue
+
+        absolute = _normalize_category_url(urljoin(start_url, str(href)))
+        parsed = urlparse(absolute)
+        if not parsed.path.startswith("/shop/category/"):
+            continue
+
+        link_name = _clean_text(link.get_text(" ", strip=True)) or _category_name_from_url(absolute)
+        is_view_all = bool(re.match(r"^view all\b", link_name, flags=re.IGNORECASE))
+        candidates.append((link_name, absolute, is_view_all))
+
     matched_categories: list[CategoryLink] = []
     seen_urls: set[str] = set()
     for node in category_nodes:
@@ -757,6 +776,37 @@ def discover_category_urls_from_html(
             continue
         seen_urls.add(category_url)
         matched_categories.append(CategoryLink(name=category_name, url=category_url, source_url=start_url))
+
+    fallback_threshold = min(8, max(3, len(category_names) // 5)) if category_names else 0
+    if candidates and category_names and len(matched_categories) < fallback_threshold:
+        global_matches: list[CategoryLink] = []
+        global_seen_urls: set[str] = set()
+        for category_name in category_names:
+            match: tuple[str, str, bool] | None = None
+            for prefer_view_all in (True, False):
+                for candidate in candidates:
+                    candidate_name, candidate_url, is_view_all = candidate
+                    if candidate_url in global_seen_urls:
+                        continue
+                    if prefer_view_all and not is_view_all:
+                        continue
+                    if _category_candidate_matches(candidate_name, candidate_url, category_name):
+                        match = candidate
+                        break
+                if match:
+                    break
+            if not match:
+                continue
+            _, candidate_url, _ = match
+            global_seen_urls.add(candidate_url)
+            global_matches.append(CategoryLink(name=category_name, url=candidate_url, source_url=start_url))
+
+        if len(global_matches) > len(matched_categories):
+            print(
+                f"Fallback matched category URLs from shared links ({len(global_matches)}): "
+                f"{', '.join(item.name for item in global_matches[:8])}"
+            )
+            matched_categories = global_matches
 
     if matched_categories:
         filtered_categories = _maybe_filter_top_level_categories(matched_categories)
@@ -771,27 +821,13 @@ def discover_category_urls_from_html(
         )
         return filtered_categories
 
-    links = search_root.select(category_link_selector)
-    if not links:
-        links = search_root.select("a[href]")
-
     categories: list[CategoryLink] = []
     seen: set[str] = set()
 
-    for link in links:
-        href = link.get("href")
-        if not href:
-            continue
-
-        absolute = _normalize_category_url(urljoin(start_url, str(href)))
-        parsed = urlparse(absolute)
-        if not parsed.path.startswith("/shop/category/"):
-            continue
+    for link_name, absolute, _ in candidates:
         if absolute in seen:
             continue
-
         seen.add(absolute)
-        link_name = _clean_text(link.get_text(" ", strip=True)) or _category_name_from_url(absolute)
         cleaned_name = _clean_text(re.sub(r"^\s*view all\s+", "", link_name, flags=re.IGNORECASE))
         categories.append(CategoryLink(name=cleaned_name or _category_name_from_url(absolute), url=absolute, source_url=start_url))
 
