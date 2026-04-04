@@ -44,6 +44,32 @@ class CategoryDiscoveryTests(unittest.TestCase):
             ["Fruit & Vegetables", "Dairy, Eggs & Fridge"],
         )
 
+    def test_discover_category_urls_filters_large_mixed_menu_to_likely_top_level_categories(self):
+        top_level = [
+            ("Fruit & Vegetables", "fruit-and-vegetables"),
+            ("Bakery", "bakery"),
+            ("Frozen", "frozen"),
+            ("Pet Care", "pet-care"),
+        ]
+        extras = [(f"Promo {idx}", f"promo-{idx}") for idx in range(1, 23)]
+        sections = []
+        for label, slug in top_level + extras:
+            sections.append(
+                f'''<button class="_7zlpdc">{label}</button>
+                <div><a class="_7zlpdd _7zlpdc" href="/shop/category/{slug}?pg=1">View all {label}</a></div>'''
+            )
+
+        html = "<section><h2>Groceries</h2>" + "".join(sections) + "</section>"
+
+        categories = discover_category_urls_from_html(
+            start_url="https://www.newworld.co.nz/",
+            html=html,
+            category_link_selector="a._7zlpdd._7zlpdc",
+            category_name_selector="button._7zlpdc",
+        )
+
+        self.assertEqual([category.name for category in categories], [label for label, _ in top_level])
+
 
 if __name__ == "__main__":
     unittest.main()
