@@ -651,31 +651,36 @@ def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -
     return None
 
 
-_TOP_LEVEL_CATEGORY_TOKEN_HINTS = (
-    frozenset({"fruit", "vegetables"}),
-    frozenset({"meat", "poultry", "seafood"}),
-    frozenset({"butchery", "seafood"}),
-    frozenset({"fridge", "deli", "eggs"}),
-    frozenset({"dairy", "eggs", "fridge"}),
-    frozenset({"bakery"}),
-    frozenset({"frozen"}),
-    frozenset({"pantry"}),
-    frozenset({"drinks"}),
-    frozenset({"beer", "wine", "spirits"}),
-    frozenset({"health", "beauty", "baby"}),
-    frozenset({"cleaning", "household"}),
-    frozenset({"cleaning", "laundry", "paper"}),
-    frozenset({"pet", "care"}),
+_TOP_LEVEL_CATEGORY_LABEL_HINTS = frozenset(
+    {
+        "fruit and vegetables",
+        "meat poultry and seafood",
+        "butchery and seafood",
+        "fridge deli and eggs",
+        "dairy eggs and fridge",
+        "bakery",
+        "in store bakery",
+        "frozen",
+        "pantry",
+        "drinks",
+        "beer wine and spirits",
+        "health beauty and baby",
+        "baby health and beauty",
+        "cleaning household",
+        "cleaning laundry and paper",
+        "household cleaning and laundry",
+        "pet care",
+    }
 )
 
 
 def _is_likely_top_level_category(name: str, url: str) -> bool:
     normalized_name = _normalize_category_label(name)
     normalized_slug = _normalize_category_label(urlparse(url).path.rstrip("/").rsplit("/", 1)[-1])
-    tokens = set(normalized_name.split()) | set(normalized_slug.split())
-    if not tokens:
-        return False
-    return any(hint.issubset(tokens) for hint in _TOP_LEVEL_CATEGORY_TOKEN_HINTS)
+    return (
+        normalized_name in _TOP_LEVEL_CATEGORY_LABEL_HINTS
+        or normalized_slug in _TOP_LEVEL_CATEGORY_LABEL_HINTS
+    )
 
 
 def _maybe_filter_top_level_categories(categories: list[CategoryLink]) -> list[CategoryLink]:
