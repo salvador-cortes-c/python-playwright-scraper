@@ -653,6 +653,16 @@ def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -
 
 _CATEGORY_JSON_NAME_KEYS = ("name", "title", "label", "displayName", "text")
 _CATEGORY_JSON_URL_KEYS = ("url", "href", "path")
+_CATEGORY_JSON_CHILD_KEYS = (
+    "children",
+    "items",
+    "links",
+    "categories",
+    "subCategories",
+    "subcategories",
+    "menuItems",
+    "navigation",
+)
 
 
 def _first_category_json_text(item: dict[str, Any]) -> str:
@@ -704,6 +714,79 @@ def _collect_category_links_from_json(data: Any, start_url: str, out: dict[str, 
         _collect_category_links_from_json(value, start_url, out, depth + 1)
 
 
+def _iter_category_json_child_lists(item: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    child_lists: list[list[dict[str, Any]]] = []
+    for key in _CATEGORY_JSON_CHILD_KEYS:
+        value = item.get(key)
+        if isinstance(value, list):
+            children = [child for child in value if isinstance(child, dict)]
+            if children:
+                child_lists.append(children)
+    return child_lists
+
+
+def _find_matching_category_url_in_json(data: Any, start_url: str, category_name: str) -> str | None:
+    candidates_by_url: dict[str, CategoryLink] = {}
+    _collect_category_links_from_json(data, start_url, candidates_by_url)
+    if not candidates_by_url:
+        return None
+
+    candidates = list(candidates_by_url.values())
+    for prefer_view_all in (True, False):
+        for candidate in candidates:
+            is_view_all = bool(re.match(r"^view all\b", candidate.name, flags=re.IGNORECASE))
+            if prefer_view_all and not is_view_all:
+                continue
+            if _category_candidate_matches(candidate.name, candidate.url, category_name):
+                return candidate.url
+
+    if len(candidates) == 1:
+        return candidates[0].url
+    return None
+
+
+def _discover_groceries_category_links_from_data(
+    data: Any,
+    start_url: str,
+    depth: int = 0,
+) -> list[CategoryLink]:
+    if depth > 30:
+        return []
+    if isinstance(data, list):
+        for item in data:
+            categories = _discover_groceries_category_links_from_data(item, start_url, depth + 1)
+            if categories:
+                return categories
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    if _normalize_category_label(_first_category_json_text(data)) == "groceries":
+        best_categories: list[CategoryLink] = []
+        for child_list in _iter_category_json_child_lists(data):
+            categories: list[CategoryLink] = []
+            seen_urls: set[str] = set()
+            for child in child_list:
+                category_name = _first_category_json_text(child)
+                if not category_name or re.match(r"^view all\b", category_name, flags=re.IGNORECASE):
+                    continue
+                category_url = _find_matching_category_url_in_json(child, start_url, category_name)
+                if not category_url or category_url in seen_urls:
+                    continue
+                seen_urls.add(category_url)
+                categories.append(CategoryLink(name=category_name, url=category_url, source_url=start_url))
+            if len(categories) > len(best_categories):
+                best_categories = categories
+        if best_categories:
+            return best_categories
+
+    for value in data.values():
+        categories = _discover_groceries_category_links_from_data(value, start_url, depth + 1)
+        if categories:
+            return categories
+    return []
+
+
 def discover_category_urls_from_json(start_url: str, html: str) -> list[CategoryLink]:
     soup = BeautifulSoup(html, "html.parser")
     categories_by_url: dict[str, CategoryLink] = {}
@@ -720,6 +803,11 @@ def discover_category_urls_from_json(start_url: str, html: str) -> list[Category
             data = json.loads(json_text)
         except (json.JSONDecodeError, ValueError):
             continue
+
+        groceries_categories = _discover_groceries_category_links_from_data(data, start_url)
+        if groceries_categories:
+            return groceries_categories
+
         _collect_category_links_from_json(data, start_url, categories_by_url)
 
     categories = list(categories_by_url.values())
@@ -728,6 +816,9 @@ def discover_category_urls_from_json(start_url: str, html: str) -> list[Category
 
 _TOP_LEVEL_CATEGORY_LABEL_HINTS = frozenset(
     {
+        "easter deals",
+        "clubcard be in to win",
+        "easter",
         "fruit and vegetables",
         "meat",
         "meat poultry and seafood",
@@ -741,20 +832,27 @@ _TOP_LEVEL_CATEGORY_LABEL_HINTS = frozenset(
         "in store bakery",
         "frozen",
         "pantry",
+        "hot and cold drinks",
         "drinks",
         "beer",
+        "beer wine and cider",
         "beer wine and spirits",
         "wine and spirits",
+        "health and body",
         "health and beauty",
         "health beauty and baby",
         "baby",
+        "baby and toddler",
         "baby health and beauty",
         "cleaning",
         "cleaning household",
         "cleaning laundry and paper",
         "laundry and paper",
+        "household and cleaning",
         "household cleaning and laundry",
+        "pets",
         "pet care",
+        "snacks treats and easy meals",
     }
 )
 
@@ -805,6 +903,19 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
     for pattern in (r"page\s+\d+\s+of\s+(\d+)", r"of\s+(\d+)\s+pages?"):
         for match in re.finditer(pattern, page_text, re.IGNORECASE):
             page_numbers.add(int(match.group(1)))
+
+    showing_match = re.search(
+        r"showing\s+(\d+)\s*[-–]\s*(\d+)\s+of\s+(\d+)\s+products?",
+        page_text,
+        re.IGNORECASE,
+    )
+    if showing_match:
+        start_item = int(showing_match.group(1))
+        end_item = int(showing_match.group(2))
+        total_items = int(showing_match.group(3))
+        if end_item >= start_item and total_items >= end_item:
+            page_size = max(1, (end_item - start_item) + 1)
+            page_numbers.add((total_items + page_size - 1) // page_size)
 
     if not page_numbers:
         return [_normalize_category_url(start_url)]

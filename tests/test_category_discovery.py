@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper import discover_category_urls_from_html
+from scraper import discover_category_page_urls_from_html, discover_category_urls_from_html
 
 
 class CategoryDiscoveryTests(unittest.TestCase):
@@ -115,15 +115,22 @@ class CategoryDiscoveryTests(unittest.TestCase):
                   {
                     "name": "Groceries",
                     "children": [
+                      {"name": "Easter Deals", "url": "/shop/category/easter-deals"},
+                      {"name": "Clubcard be in to Win", "url": "/shop/category/clubcard-be-in-to-win"},
+                      {"name": "Easter", "url": "/shop/category/easter"},
                       {"name": "Fruit & Vegetables", "url": "/shop/category/fruit-and-vegetables"},
+                      {"name": "Meat, Poultry & Seafood", "url": "/shop/category/meat-poultry-and-seafood"},
+                      {"name": "Fridge, Deli & Eggs", "url": "/shop/category/dairy-eggs-and-fridge"},
                       {"name": "Bakery", "href": "/shop/category/bakery?pg=1"},
-                      {"name": "Promo", "url": "/promo/easter"},
-                      {
-                        "name": "Frozen",
-                        "children": [
-                          {"label": "View all Frozen", "href": "/shop/category/frozen?pg=1"}
-                        ]
-                      }
+                      {"name": "Frozen", "children": [{"label": "View all Frozen", "href": "/shop/category/frozen?pg=1"}]},
+                      {"name": "Pantry", "url": "/shop/category/pantry"},
+                      {"name": "Hot & Cold Drinks", "url": "/shop/category/hot-and-cold-drinks"},
+                      {"name": "Beer, Wine & Cider", "url": "/shop/category/beer-wine-and-cider"},
+                      {"name": "Health & Body", "url": "/shop/category/health-and-body"},
+                      {"name": "Baby & Toddler", "url": "/shop/category/baby-and-toddler"},
+                      {"name": "Pets", "url": "/shop/category/pets"},
+                      {"name": "Household & Cleaning", "url": "/shop/category/household-and-cleaning"},
+                      {"name": "Snacks, Treats & Easy Meals", "url": "/shop/category/snacks-treats-and-easy-meals"}
                     ]
                   }
                 ]
@@ -143,7 +150,42 @@ class CategoryDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(
             [category.name for category in categories],
-            ["Fruit & Vegetables", "Bakery", "Frozen"],
+            [
+                "Easter Deals",
+                "Clubcard be in to Win",
+                "Easter",
+                "Fruit & Vegetables",
+                "Meat, Poultry & Seafood",
+                "Fridge, Deli & Eggs",
+                "Bakery",
+                "Frozen",
+                "Pantry",
+                "Hot & Cold Drinks",
+                "Beer, Wine & Cider",
+                "Health & Body",
+                "Baby & Toddler",
+                "Pets",
+                "Household & Cleaning",
+                "Snacks, Treats & Easy Meals",
+            ],
+        )
+
+    def test_discover_category_page_urls_uses_showing_product_count_text(self):
+        html = '''
+        <div class="pagination">
+          <span>Showing 1 - 50 of 212 products</span>
+        </div>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1",
+            html=html,
+        )
+
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(
+            pages[-1],
+            "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
         )
 
 
