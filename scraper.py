@@ -73,7 +73,7 @@ _SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
         "image_selector": "[data-testid='product-image']",
         "category_link_selector": "a._7zlpdd._7zlpdc, a[href*='/shop/category/']",
         "category_name_selector": "button._7zlpdc, [data-testid='choose-store'], a[href*='/shop/category/']",
-        "store_ribbon_button_selector": "[data-testid='choose-store'], #ribbon button[aria-haspopup='dialog'], button[aria-label*='store' i], button[aria-label*='location' i]",
+        "store_ribbon_button_selector": "[data-testid='choose-store'], #ribbon button[aria-haspopup='dialog'], button[aria-label*='store' i], button[aria-label*='location' i], a[aria-label*='location' i], a[aria-label*='pick up or delivery' i], a:has-text('Pick up or delivery?')",
         "store_change_link_selector": "#ribbon a[href], [data-testid='tooltip-choose-store'], a[href*='change-store' i], a[href*='/shop/fulfillment']",
         "store_bar_selector": "#_r_8_, [role='combobox'], input[placeholder*='store' i], input[aria-label*='store' i]",
     },
@@ -89,7 +89,7 @@ _SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
         "image_selector": "[data-testid='product-image']",
         "category_link_selector": "a[href*='/shop/category/']",
         "category_name_selector": "button, a[href*='/shop/category/']",
-        "store_ribbon_button_selector": "[data-testid='choose-store'], button[aria-label*='store' i], button[aria-label*='location' i], #ribbon button",
+        "store_ribbon_button_selector": "[data-testid='choose-store'], button[aria-label*='store' i], button[aria-label*='location' i], a[aria-label*='location' i], a[aria-label*='pick up or delivery' i], a:has-text('Pick up or delivery?'), #ribbon button",
         "store_change_link_selector": "[data-testid='tooltip-choose-store'], a[href*='change-store' i], a[href*='/shop/fulfillment']",
         "store_bar_selector": "#_r_8_, [role='combobox'], input[placeholder*='store' i], input[aria-label*='store' i]",
     },
@@ -106,9 +106,9 @@ _SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
         "wait_for_selector": "product-stamp-grid, h3[id$='-title']",
         "category_link_selector": "a[href*='/shop/browse/']",
         "category_name_selector": "a[href*='/shop/browse/'], nav a, button span",
-        "store_ribbon_button_selector": "button[aria-label*='location' i], button[aria-label*='pick up or delivery' i], [data-testid='select-store'], [data-testid='choose-store']",
+        "store_ribbon_button_selector": "button[aria-label*='location' i], button[aria-label*='pick up or delivery' i], a[aria-label*='location' i], a[aria-label*='pick up or delivery' i], a:has-text('Pick up or delivery?'), [data-testid='select-store'], [data-testid='choose-store']",
         "store_change_link_selector": "a[aria-label*='Change location' i], a[href*='change-location' i], a[href*='store']",
-        "store_bar_selector": "[role='combobox'], input[placeholder*='Search' i], input[aria-label*='Search' i]",
+        "store_bar_selector": "input[placeholder*='Address' i], input[placeholder*='suburb' i], input[placeholder*='town' i]",
         "open_category_menu_selector": "button:has-text('Browse')",
     },
 }
@@ -1740,41 +1740,68 @@ async def choose_store_playwright(
 ) -> str:
     await _playwright_navigate(page, start_url, args, "choosing store")
 
-    await page.click(args.store_ribbon_button_selector, timeout=30000)
     try:
-        await page.locator(args.store_change_link_selector).click(timeout=15000, force=True)
+        await page.click(args.store_ribbon_button_selector, timeout=30000)
+    except Exception:
+        pass
+
+    try:
+        await page.locator(args.store_change_link_selector).first.click(timeout=15000, force=True)
     except Exception:
         try:
             await page.locator('[data-testid="tooltip-choose-store"]').first.click(timeout=15000)
         except Exception:
-            href = await page.locator(args.store_change_link_selector).get_attribute("href")
+            href = await page.locator(args.store_change_link_selector).first.get_attribute("href")
             if not href:
                 raise
             await page.goto(urljoin(page.url, href), wait_until="domcontentloaded", timeout=60000)
 
     await page.wait_for_load_state("domcontentloaded")
-    await page.click(args.store_bar_selector, timeout=30000)
+    store_bar = page.locator(args.store_bar_selector).first
+    await store_bar.click(timeout=30000)
     await page.wait_for_timeout(300)
 
     if store_name:
         normalized_target = " ".join(store_name.split()).strip().removesuffix(" Store details").strip()
         fallback_target = normalized_target.split(",")[0].strip() if "," in normalized_target else normalized_target
-        options = page.locator("[role='option']")
-        for _ in range(80):
-            filtered = options.filter(has_text=normalized_target)
-            if await filtered.count() > 0:
-                await filtered.first.click(timeout=30000)
-                break
+        stripped_target = re.sub(r"^(new\s+world|pak'?nsave|pak\s*n\s*save|woolworths)\s+", "", fallback_target, flags=re.IGNORECASE).strip()
+        typed_target = stripped_target or fallback_target or normalized_target
+        try:
+            await store_bar.fill(typed_target, timeout=5000)
+            await page.wait_for_timeout(500)
+            await page.keyboard.press("Enter")
+        except Exception:
+            try:
+                await page.keyboard.insert_text(typed_target)
+            except Exception:
+                pass
 
-            if fallback_target and fallback_target != normalized_target:
-                filtered_fallback = options.filter(has_text=fallback_target)
-                if await filtered_fallback.count() > 0:
-                    await filtered_fallback.first.click(timeout=30000)
+        try:
+            await page.wait_for_selector("[role='option']", timeout=8000)
+        except Exception:
+            pass
+
+        match_targets: list[str] = []
+        for candidate in (normalized_target, fallback_target, stripped_target):
+            candidate = candidate.strip()
+            if candidate and candidate not in match_targets:
+                match_targets.append(candidate)
+
+        options = page.locator("[role='option']")
+        selected = False
+        for _ in range(80):
+            for candidate in match_targets:
+                filtered = options.filter(has_text=candidate)
+                if await filtered.count() > 0:
+                    await filtered.first.click(timeout=30000)
+                    selected = True
                     break
+            if selected:
+                break
 
             await page.keyboard.press("PageDown")
             await page.wait_for_timeout(150)
-        else:
+        if not selected:
             raise RuntimeError(
                 f"Could not find store option matching '{normalized_target}'. "
                 "Try adjusting --store-name or the store selectors."
@@ -1788,7 +1815,7 @@ async def choose_store_playwright(
         await options.nth(index).click(timeout=30000)
 
     await page.wait_for_timeout(1000)
-    selected = await _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
+    selected = _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
     if selected:
         print(f"Selected store: {selected}")
     return selected
