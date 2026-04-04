@@ -6,6 +6,8 @@
 -- Row counts per table
 SELECT 'products' AS table_name, COUNT(*) AS row_count FROM products
 UNION ALL
+SELECT 'supermarkets', COUNT(*) FROM supermarkets
+UNION ALL
 SELECT 'stores', COUNT(*) FROM stores
 UNION ALL
 SELECT 'categories', COUNT(*) FROM categories
@@ -16,6 +18,11 @@ SELECT 'price_snapshots', COUNT(*) FROM price_snapshots
 UNION ALL
 SELECT 'crawl_runs', COUNT(*) FROM crawl_runs
 ORDER BY table_name;
+
+-- Missing supermarket links after the schema migration
+SELECT
+    (SELECT COUNT(*) FROM stores WHERE supermarket_id IS NULL) AS stores_missing_supermarket,
+    (SELECT COUNT(*) FROM price_snapshots WHERE supermarket_id IS NULL) AS snapshots_missing_supermarket;
 
 -- Categories with no linked products
 SELECT

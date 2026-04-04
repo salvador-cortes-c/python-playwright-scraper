@@ -497,6 +497,7 @@ def maybe_persist_to_database(
     print(
         "Persisted to DB: "
         f"products={stats.products_upserted}, "
+        f"supermarkets={stats.supermarkets_upserted}, "
         f"stores={stats.stores_upserted}, "
         f"categories={stats.categories_upserted}, "
         f"snapshots={stats.snapshots_inserted}, "

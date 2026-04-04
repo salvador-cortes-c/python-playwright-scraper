@@ -10,11 +10,17 @@ import psycopg
 
 
 _CATEGORY_PATH_PREFIXES = ("/shop/category/", "/shop/browse/")
+_KNOWN_SUPERMARKETS: tuple[tuple[str, str], ...] = (
+    ("New World", "newworld"),
+    ("Pak'nSave", "paknsave"),
+    ("Woolworths", "woolworths"),
+)
 
 
 @dataclass
 class PersistStats:
     products_upserted: int = 0
+    supermarkets_upserted: int = 0
     stores_upserted: int = 0
     categories_upserted: int = 0
     snapshots_inserted: int = 0
@@ -35,6 +41,39 @@ def _parse_price_to_cents(value: str | None) -> int | None:
         return int(round(float(cleaned) * 100))
     except Exception:
         return None
+
+
+def _supermarket_code(name: str | None) -> str:
+    normalized = str(name or "").strip().lower()
+    if not normalized:
+        return ""
+    if "pak'nsave" in normalized or "paknsave" in normalized:
+        return "paknsave"
+    if "woolworths" in normalized or "countdown" in normalized:
+        return "woolworths"
+    if "new world" in normalized or "newworld" in normalized:
+        return "newworld"
+    return normalized.replace("&", "and").replace("'", "").replace(" ", "-")
+
+
+def _infer_supermarket_name(store_name: str | None = None, source_url: str | None = None) -> str:
+    store_value = str(store_name or "").strip()
+    code = _supermarket_code(store_value)
+    if code == "paknsave":
+        return "Pak'nSave"
+    if code == "woolworths":
+        return "Woolworths"
+    if code == "newworld":
+        return "New World"
+
+    host = urlparse(str(source_url or "")).netloc.lower()
+    if "paknsave.co.nz" in host:
+        return "Pak'nSave"
+    if "woolworths.co.nz" in host or "countdown.co.nz" in host:
+        return "Woolworths"
+    if "newworld.co.nz" in host:
+        return "New World"
+    return ""
 
 
 def _is_category_like_path(path: str | None) -> bool:
@@ -200,6 +239,54 @@ def dedupe_price_snapshots(snapshots: Iterable) -> list:
     return deduped
 
 
+def _backfill_supermarket_refs(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        supermarket_name_to_id: dict[str, int] = {}
+        for name, code in _KNOWN_SUPERMARKETS:
+            cur.execute(
+                """
+                INSERT INTO supermarkets (name, code)
+                VALUES (%s, %s)
+                ON CONFLICT (code)
+                DO UPDATE SET name = EXCLUDED.name
+                RETURNING id;
+                """,
+                (name, code),
+            )
+            row = cur.fetchone()
+            if row:
+                supermarket_name_to_id[name] = int(row[0])
+
+        cur.execute("SELECT id, name FROM stores WHERE supermarket_id IS NULL")
+        for store_id, store_name in cur.fetchall():
+            supermarket_name = _infer_supermarket_name(store_name=store_name)
+            supermarket_id = supermarket_name_to_id.get(supermarket_name)
+            if supermarket_id is not None:
+                cur.execute(
+                    "UPDATE stores SET supermarket_id = %s WHERE id = %s",
+                    (supermarket_id, int(store_id)),
+                )
+
+        cur.execute(
+            """
+            SELECT ps.id, ps.source_url, COALESCE(st.name, ''), st.supermarket_id
+            FROM price_snapshots ps
+            LEFT JOIN stores st ON st.id = ps.store_id
+            WHERE ps.supermarket_id IS NULL
+            """
+        )
+        for snapshot_id, source_url, store_name, store_supermarket_id in cur.fetchall():
+            supermarket_id = store_supermarket_id
+            if supermarket_id is None:
+                supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=source_url)
+                supermarket_id = supermarket_name_to_id.get(supermarket_name)
+            if supermarket_id is not None:
+                cur.execute(
+                    "UPDATE price_snapshots SET supermarket_id = %s WHERE id = %s",
+                    (int(supermarket_id), int(snapshot_id)),
+                )
+
+
 def _ensure_schema(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -216,11 +303,28 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
         )
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS supermarkets (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                code TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS stores (
                 id BIGSERIAL PRIMARY KEY,
+                supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL,
                 name TEXT NOT NULL UNIQUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE stores
+            ADD COLUMN IF NOT EXISTS supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL;
             """
         )
         cur.execute(
@@ -263,6 +367,7 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
                 id BIGSERIAL PRIMARY KEY,
                 product_key TEXT NOT NULL REFERENCES products(product_key) ON DELETE CASCADE,
                 store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+                supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL,
                 price_cents INTEGER,
                 unit_price_text TEXT NOT NULL DEFAULT '',
                 promo_price_cents INTEGER,
@@ -277,8 +382,26 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
         )
         cur.execute(
             """
+            ALTER TABLE price_snapshots
+            ADD COLUMN IF NOT EXISTS supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL;
+            """
+        )
+        cur.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_price_snapshots_product_store_time
             ON price_snapshots (product_key, store_id, scraped_at DESC);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stores_supermarket_name
+            ON stores (supermarket_id, name);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_price_snapshots_supermarket_store_time
+            ON price_snapshots (supermarket_id, store_id, scraped_at DESC);
             """
         )
         cur.execute(
@@ -287,6 +410,8 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
             ON price_snapshots (source_url);
             """
         )
+
+    _backfill_supermarket_refs(conn)
 
 
 def _insert_crawl_run(
@@ -327,6 +452,39 @@ def persist_scrape_results(
 
     with psycopg.connect(database_url) as conn:
         _ensure_schema(conn)
+
+        supermarket_name_to_id: dict[str, int] = {}
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name FROM supermarkets")
+            for supermarket_id, supermarket_name in cur.fetchall():
+                supermarket_name_to_id[str(supermarket_name)] = int(supermarket_id)
+
+            for snapshot in snapshots:
+                supermarket_name = _infer_supermarket_name(
+                    store_name=getattr(snapshot, "supermarket_name", ""),
+                    source_url=getattr(snapshot, "source_url", ""),
+                )
+                if not supermarket_name or supermarket_name in supermarket_name_to_id:
+                    continue
+                cur.execute(
+                    """
+                    INSERT INTO supermarkets (name, code)
+                    VALUES (%s, %s)
+                    ON CONFLICT (code)
+                    DO UPDATE SET name = EXCLUDED.name
+                    RETURNING id;
+                    """,
+                    (supermarket_name, _supermarket_code(supermarket_name)),
+                )
+                row = cur.fetchone()
+                if row:
+                    supermarket_name_to_id[supermarket_name] = int(row[0])
+                else:
+                    cur.execute("SELECT id FROM supermarkets WHERE code = %s", (_supermarket_code(supermarket_name),))
+                    fallback = cur.fetchone()
+                    if fallback:
+                        supermarket_name_to_id[supermarket_name] = int(fallback[0])
+                stats.supermarkets_upserted += 1
 
         # Upsert products first so snapshots and links have FK targets.
         with conn.cursor() as cur:
@@ -369,15 +527,19 @@ def persist_scrape_results(
                 store_name = (snapshot.supermarket_name or "").strip()
                 if not store_name or store_name in store_name_to_id:
                     continue
+                supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=snapshot.source_url)
+                supermarket_id = supermarket_name_to_id.get(supermarket_name)
                 cur.execute(
                     """
-                    INSERT INTO stores (name)
-                    VALUES (%s)
+                    INSERT INTO stores (name, supermarket_id)
+                    VALUES (%s, %s)
                     ON CONFLICT (name)
-                    DO UPDATE SET name = EXCLUDED.name
+                    DO UPDATE SET
+                        name = EXCLUDED.name,
+                        supermarket_id = COALESCE(EXCLUDED.supermarket_id, stores.supermarket_id)
                     RETURNING id;
                     """,
-                    (store_name,),
+                    (store_name, supermarket_id),
                 )
                 row = cur.fetchone()
                 if row:
@@ -404,12 +566,15 @@ def persist_scrape_results(
             for snapshot in snapshots:
                 store_name = (snapshot.supermarket_name or "").strip()
                 store_id = store_name_to_id.get(store_name)
+                supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=snapshot.source_url)
+                supermarket_id = supermarket_name_to_id.get(supermarket_name)
 
                 cur.execute(
                     """
                     INSERT INTO price_snapshots (
                         product_key,
                         store_id,
+                        supermarket_id,
                         price_cents,
                         unit_price_text,
                         promo_price_cents,
@@ -419,11 +584,12 @@ def persist_scrape_results(
                         provider,
                         crawl_run_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """,
                     (
                         snapshot.product_key,
                         store_id,
+                        supermarket_id,
                         _parse_price_to_cents(snapshot.price),
                         snapshot.unit_price or "",
                         _parse_price_to_cents(snapshot.promo_price),

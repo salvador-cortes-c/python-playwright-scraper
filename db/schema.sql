@@ -9,8 +9,16 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS supermarkets (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  code TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS stores (
   id BIGSERIAL PRIMARY KEY,
+  supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL,
   name TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -44,6 +52,7 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
   id BIGSERIAL PRIMARY KEY,
   product_key TEXT NOT NULL REFERENCES products(product_key) ON DELETE CASCADE,
   store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+  supermarket_id BIGINT REFERENCES supermarkets(id) ON DELETE SET NULL,
   price_cents INTEGER,
   unit_price_text TEXT NOT NULL DEFAULT '',
   promo_price_cents INTEGER,
@@ -55,8 +64,14 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_stores_supermarket_name
+  ON stores (supermarket_id, name);
+
 CREATE INDEX IF NOT EXISTS idx_price_snapshots_product_store_time
   ON price_snapshots (product_key, store_id, scraped_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_price_snapshots_supermarket_store_time
+  ON price_snapshots (supermarket_id, store_id, scraped_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_price_snapshots_source_url
   ON price_snapshots (source_url);

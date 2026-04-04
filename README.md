@@ -55,6 +55,8 @@ Apply schema once:
 psql "$DATABASE_URL" -f db/schema.sql
 ```
 
+The schema now normalizes retailer identity through a dedicated `supermarkets` table and links both `stores` and `price_snapshots` back to it.
+
 Run scraper with persistence enabled:
 
 ```bash

@@ -8,11 +8,20 @@ from database import (
     _build_category_lookup,
     _collect_category_rows,
     _find_category_id_for_source_url,
+    _infer_supermarket_name,
     dedupe_price_snapshots,
 )
 
 
 class DatabasePersistenceTests(unittest.TestCase):
+    def test_infer_supermarket_name_from_store_or_url(self):
+        self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")
+        self.assertEqual(_infer_supermarket_name(store_name="Pak'nSave Albany"), "Pak'nSave")
+        self.assertEqual(
+            _infer_supermarket_name(source_url="https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1"),
+            "Woolworths",
+        )
+
     def test_dedupe_price_snapshots_collapses_duplicates_from_same_category_run(self):
         class Snapshot:
             def __init__(self, product_key, supermarket_name, source_url, scraped_at, price='4.99'):
