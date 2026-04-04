@@ -194,6 +194,7 @@ class ZenrowsProvider(_BaseProvider):
             "apikey": self.api_key,
             "url": url,
             "js_render": "true",
+            "antibot": "true",
             "premium_proxy": "true" if self.premium_proxy else "false",
             "proxy_country": self.country_code,
         }
@@ -975,6 +976,50 @@ def _collect_page_numbers_from_pagination_elements(soup: BeautifulSoup, page_num
                     page_numbers.add(value)
 
 
+def _collect_page_numbers_from_raw_html(html: str, page_numbers: set[int]) -> None:
+    variants = {
+        html,
+        html.replace(r'\/', '/').replace(r'\"', '"').replace('&quot;', '"'),
+    }
+
+    total_pages_patterns = (
+        r'"?(?:totalPages|pageCount|totalPageCount|numberOfPages|lastPage|pageTotal)"?\s*[:=]\s*"?(\d{1,4})"?',
+    )
+    total_items_patterns = (
+        r'"?(?:totalItems|totalProducts|totalProductCount|totalResults|resultCount|productCount|itemCount)"?\s*[:=]\s*"?(\d{1,6})"?',
+    )
+    page_size_patterns = (
+        r'"?(?:pageSize|itemsPerPage|resultsPerPage|perPage|limit)"?\s*[:=]\s*"?(\d{1,4})"?',
+    )
+
+    for text in variants:
+        for pattern in total_pages_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                value = int(match.group(1))
+                if 1 <= value <= 500:
+                    page_numbers.add(value)
+
+        total_items_values: list[int] = []
+        page_size_values: list[int] = []
+
+        for pattern in total_items_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                value = int(match.group(1))
+                if 1 <= value <= 500000:
+                    total_items_values.append(value)
+
+        for pattern in page_size_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                value = int(match.group(1))
+                if 1 <= value <= 500:
+                    page_size_values.append(value)
+
+        for total_items in total_items_values:
+            for page_size in page_size_values:
+                if total_items >= page_size:
+                    page_numbers.add((total_items + page_size - 1) // page_size)
+
+
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     href_elements = soup.select("a[href*='pg=']")
@@ -1038,6 +1083,8 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
         except (json.JSONDecodeError, ValueError):
             continue
         _collect_page_numbers_from_json(data, page_numbers)
+
+    _collect_page_numbers_from_raw_html(html, page_numbers)
 
     if not page_numbers:
         return [_normalize_category_url(start_url)]
@@ -2175,6 +2222,9 @@ async def fetch_html_or_raise(
 
     if _is_rate_limited(status, title, body_preview):
         raise RateLimitError(f"Cloudflare rate limit detected while resolving {url} (Error 1015/429).")
+
+    if _is_bot_challenge(status, title, body_preview):
+        raise RuntimeError(f"Bot challenge detected while resolving {url}; returned HTML is not the real category page")
 
     return html
 

@@ -285,6 +285,26 @@ class CategoryDiscoveryTests(unittest.TestCase):
             "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
         )
 
+    def test_discover_category_page_urls_uses_raw_script_pagination_hints(self):
+        html = '''
+        <html><body>
+          <script>
+            self.__next_f.push([1, 'pagination:{"currentPage":1,"pageSize":50,"totalItems":212}']);
+          </script>
+        </body></html>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=1",
+            html=html,
+        )
+
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(
+            pages[-1],
+            "https://www.newworld.co.nz/shop/category/fruit-and-vegetables?pg=5",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
