@@ -133,6 +133,53 @@ def _collect_category_rows(categories: Iterable, snapshots: Iterable) -> list[tu
     return rows
 
 
+def _canonical_snapshot_source_url(url: str | None) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    normalized_path = parsed.path.rstrip("/") or parsed.path
+    if normalized_path.startswith("/shop/category/"):
+        return _canonical_category_url(raw)
+    return urlunparse(parsed._replace(netloc=parsed.netloc.lower(), path=normalized_path, fragment=""))
+
+
+def dedupe_price_snapshots(snapshots: Iterable) -> list:
+    deduped: list = []
+    seen: dict[tuple[str, str, str, str, str, str, str], int] = {}
+
+    def score(snapshot: object) -> int:
+        values = [
+            getattr(snapshot, "price", ""),
+            getattr(snapshot, "unit_price", ""),
+            getattr(snapshot, "promo_price", ""),
+            getattr(snapshot, "promo_unit_price", ""),
+        ]
+        return sum(1 for value in values if str(value or "").strip())
+
+    for snapshot in snapshots:
+        current_key = (
+            str(getattr(snapshot, "product_key", "")).strip().lower(),
+            str(getattr(snapshot, "supermarket_name", "")).strip().lower(),
+            _canonical_snapshot_source_url(getattr(snapshot, "source_url", "")),
+            str(getattr(snapshot, "price", "") or "").strip(),
+            str(getattr(snapshot, "unit_price", "") or "").strip(),
+            str(getattr(snapshot, "promo_price", "") or "").strip(),
+            str(getattr(snapshot, "promo_unit_price", "") or "").strip(),
+        )
+
+        existing_index = seen.get(current_key)
+        if existing_index is None:
+            seen[current_key] = len(deduped)
+            deduped.append(snapshot)
+            continue
+
+        if score(snapshot) > score(deduped[existing_index]):
+            deduped[existing_index] = snapshot
+
+    return deduped
+
+
 def _ensure_schema(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -255,7 +302,7 @@ def persist_scrape_results(
 ) -> PersistStats:
     stats = PersistStats()
     products = list(products)
-    snapshots = list(snapshots)
+    snapshots = dedupe_price_snapshots(list(snapshots))
     categories = list(categories)
 
     with psycopg.connect(database_url) as conn:
@@ -361,7 +408,7 @@ def persist_scrape_results(
                         snapshot.unit_price or "",
                         _parse_price_to_cents(snapshot.promo_price),
                         snapshot.promo_unit_price or "",
-                        snapshot.source_url,
+                        _canonical_snapshot_source_url(snapshot.source_url),
                         snapshot.scraped_at,
                         provider,
                         run_id,

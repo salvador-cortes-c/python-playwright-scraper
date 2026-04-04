@@ -2057,6 +2057,7 @@ def scrape_products_from_html(
 
     products: list[Product] = []
     snapshots: list[ProductPriceSnapshot] = []
+    page_scraped_at = datetime.now(timezone.utc).isoformat()
 
     for card in cards:
         if len(products) >= limit:
@@ -2124,7 +2125,6 @@ def scrape_products_from_html(
 
         packaging_format = _extract_packaging_format(unit_price)
         product_key = _product_key(name, packaging_format)
-        scraped_at = datetime.now(timezone.utc).isoformat()
 
         products.append(
             Product(
@@ -2141,7 +2141,7 @@ def scrape_products_from_html(
                 price=price,
                 unit_price=unit_price,
                 source_url=url,
-                scraped_at=scraped_at,
+                scraped_at=page_scraped_at,
                 promo_price=promo_price,
                 promo_unit_price=promo_unit_price or "",
             )

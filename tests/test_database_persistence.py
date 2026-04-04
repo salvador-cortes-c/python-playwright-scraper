@@ -4,10 +4,68 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from database import _build_category_lookup, _collect_category_rows, _find_category_id_for_source_url
+from database import (
+    _build_category_lookup,
+    _collect_category_rows,
+    _find_category_id_for_source_url,
+    dedupe_price_snapshots,
+)
 
 
 class DatabasePersistenceTests(unittest.TestCase):
+    def test_dedupe_price_snapshots_collapses_duplicates_from_same_category_run(self):
+        class Snapshot:
+            def __init__(self, product_key, supermarket_name, source_url, scraped_at, price='4.99'):
+                self.product_key = product_key
+                self.supermarket_name = supermarket_name
+                self.source_url = source_url
+                self.scraped_at = scraped_at
+                self.price = price
+                self.unit_price = '$4.99/kg'
+                self.promo_price = ''
+                self.promo_unit_price = ''
+
+        snapshots = [
+            Snapshot(
+                'abc__1kg',
+                'New World Karori',
+                'https://www.newworld.co.nz/shop/category/pantry?pg=1',
+                '2026-04-04T06:00:00+00:00',
+            ),
+            Snapshot(
+                'abc__1kg',
+                'New World Karori',
+                'https://www.newworld.co.nz/shop/category/pantry?pg=4',
+                '2026-04-04T06:00:00.200000+00:00',
+            ),
+        ]
+
+        deduped = dedupe_price_snapshots(snapshots)
+
+        self.assertEqual(len(deduped), 1)
+
+    def test_dedupe_price_snapshots_keeps_distinct_store_or_price_rows(self):
+        class Snapshot:
+            def __init__(self, product_key, supermarket_name, price):
+                self.product_key = product_key
+                self.supermarket_name = supermarket_name
+                self.source_url = 'https://www.newworld.co.nz/shop/category/pantry?pg=1'
+                self.scraped_at = '2026-04-04T06:00:00+00:00'
+                self.price = price
+                self.unit_price = '$4.99/kg'
+                self.promo_price = ''
+                self.promo_unit_price = ''
+
+        snapshots = [
+            Snapshot('abc__1kg', 'New World Karori', '4.99'),
+            Snapshot('abc__1kg', 'New World Metro', '4.99'),
+            Snapshot('abc__1kg', 'New World Karori', '5.49'),
+        ]
+
+        deduped = dedupe_price_snapshots(snapshots)
+
+        self.assertEqual(len(deduped), 3)
+
     def test_collect_category_rows_can_infer_category_from_snapshot_url(self):
         class Snapshot:
             source_url = "https://www.newworld.co.nz/shop/category/snacks-treats-and-easy-meals?pg=7"

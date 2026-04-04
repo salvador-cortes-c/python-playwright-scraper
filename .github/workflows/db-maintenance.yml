@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Choose whether to inspect the DB or backfill missing product/category links"
+        description: "Choose whether to inspect the DB, backfill missing links, or dedupe price snapshots"
         required: true
         default: analyze
         type: choice
         options:
           - analyze
           - backfill
+          - dedupe-snapshots
 
 jobs:
   database-maintenance:
@@ -47,6 +48,7 @@ jobs:
           file_map = {
               "analyze": Path("db/analyze_data_quality.sql"),
               "backfill": Path("db/backfill_product_categories.sql"),
+              "dedupe-snapshots": Path("db/dedupe_price_snapshots.sql"),
           }
           sql_path = file_map[action]
           sql_text = sql_path.read_text(encoding="utf-8")
