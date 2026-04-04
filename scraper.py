@@ -651,6 +651,40 @@ def _find_category_url_for_node(node: Tag, start_url: str, category_name: str) -
     return None
 
 
+_TOP_LEVEL_CATEGORY_TOKEN_HINTS = (
+    frozenset({"fruit", "vegetables"}),
+    frozenset({"meat", "poultry", "seafood"}),
+    frozenset({"butchery", "seafood"}),
+    frozenset({"fridge", "deli", "eggs"}),
+    frozenset({"dairy", "eggs", "fridge"}),
+    frozenset({"bakery"}),
+    frozenset({"frozen"}),
+    frozenset({"pantry"}),
+    frozenset({"drinks"}),
+    frozenset({"beer", "wine", "spirits"}),
+    frozenset({"health", "beauty", "baby"}),
+    frozenset({"cleaning", "household"}),
+    frozenset({"cleaning", "laundry", "paper"}),
+    frozenset({"pet", "care"}),
+)
+
+
+def _is_likely_top_level_category(name: str, url: str) -> bool:
+    normalized_name = _normalize_category_label(name)
+    normalized_slug = _normalize_category_label(urlparse(url).path.rstrip("/").rsplit("/", 1)[-1])
+    tokens = set(normalized_name.split()) | set(normalized_slug.split())
+    if not tokens:
+        return False
+    return any(hint.issubset(tokens) for hint in _TOP_LEVEL_CATEGORY_TOKEN_HINTS)
+
+
+def _maybe_filter_top_level_categories(categories: list[CategoryLink]) -> list[CategoryLink]:
+    if len(categories) <= 25:
+        return categories
+    filtered = [category for category in categories if _is_likely_top_level_category(category.name, category.url)]
+    return filtered or categories
+
+
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     href_elements = soup.select("a[href*='pg=']")
@@ -720,11 +754,17 @@ def discover_category_urls_from_html(
         matched_categories.append(CategoryLink(name=category_name, url=category_url, source_url=start_url))
 
     if matched_categories:
+        filtered_categories = _maybe_filter_top_level_categories(matched_categories)
+        if len(filtered_categories) != len(matched_categories):
+            print(
+                f"Filtered likely top-level Groceries categories ({len(filtered_categories)}): "
+                f"{', '.join(item.name for item in filtered_categories[:8])}"
+            )
         print(
-            f"Matched top-level category URLs ({len(matched_categories)}): "
-            f"{', '.join(item.name for item in matched_categories[:8])}"
+            f"Matched top-level category URLs ({len(filtered_categories)}): "
+            f"{', '.join(item.name for item in filtered_categories[:8])}"
         )
-        return matched_categories
+        return filtered_categories
 
     links = search_root.select(category_link_selector)
     if not links:
@@ -750,7 +790,7 @@ def discover_category_urls_from_html(
         cleaned_name = _clean_text(re.sub(r"^\s*view all\s+", "", link_name, flags=re.IGNORECASE))
         categories.append(CategoryLink(name=cleaned_name or _category_name_from_url(absolute), url=absolute, source_url=start_url))
 
-    return categories
+    return _maybe_filter_top_level_categories(categories)
 
 
 def discover_store_names_from_html(html: str) -> list[str]:
