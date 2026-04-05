@@ -23,12 +23,13 @@ class _FakeResponse:
 
 
 class _FakeSession:
-    def __init__(self) -> None:
+    def __init__(self, response_text: str = '{"html": "<html><body>ok</body></html>"}') -> None:
         self.calls: list[tuple[str, str, dict]] = []
+        self.response_text = response_text
 
     def post(self, url: str, **kwargs):
         self.calls.append(("post", url, kwargs))
-        return _FakeResponse(200, '{"html": "<html><body>ok</body></html>"}')
+        return _FakeResponse(200, self.response_text)
 
 
 class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
@@ -43,10 +44,31 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(provider.name, "floppydata")
 
+    def test_build_provider_supports_oxylabs(self):
+        provider = build_provider(
+            provider_name="oxylabs",
+            api_key="user:pass",
+            render_wait_ms=3000,
+            country_code="nz",
+            premium_proxy=True,
+        )
+
+        self.assertEqual(provider.name, "oxylabs")
+
     def test_build_provider_uses_floppydata_env_hint_when_missing_key(self):
         with self.assertRaisesRegex(ValueError, "FLOPPYDATA_API_KEY"):
             build_provider(
                 provider_name="floppydata",
+                api_key=None,
+                render_wait_ms=3000,
+                country_code="nz",
+                premium_proxy=True,
+            )
+
+    def test_build_provider_uses_oxylabs_env_hint_when_missing_key(self):
+        with self.assertRaisesRegex(ValueError, "OXYLABS_API_KEY"):
+            build_provider(
+                provider_name="oxylabs",
                 api_key=None,
                 render_wait_ms=3000,
                 country_code="nz",
@@ -78,6 +100,34 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["json"]["country"], "NZ")
         self.assertEqual(kwargs["json"]["difficulty"], "medium")
         self.assertEqual(kwargs["json"]["expiration"], 0)
+
+    async def test_oxylabs_provider_posts_basic_auth_payload_and_extracts_html(self):
+        provider = build_provider(
+            provider_name="oxylabs",
+            api_key="user:pass",
+            render_wait_ms=3000,
+            country_code="nz",
+            premium_proxy=True,
+        )
+        session = _FakeSession('{"results": [{"content": "<html><body>ok</body></html>"}]}')
+
+        html, error, status = await provider.fetch(session, "https://example.com/products")
+
+        self.assertEqual(html, "<html><body>ok</body></html>")
+        self.assertIsNone(error)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(session.calls), 1)
+
+        method, url, kwargs = session.calls[0]
+        self.assertEqual(method, "post")
+        self.assertEqual(url, "https://realtime.oxylabs.io/v1/queries")
+        self.assertEqual(kwargs["json"]["source"], "universal")
+        self.assertEqual(kwargs["json"]["url"], "https://example.com/products")
+        self.assertEqual(kwargs["json"]["geo_location"], "New Zealand")
+        self.assertEqual(kwargs["json"]["render"], "html")
+        self.assertEqual(kwargs["json"]["user_agent_type"], "desktop")
+        self.assertEqual(kwargs["auth"].login, "user")
+        self.assertEqual(kwargs["auth"].password, "pass")
 
 
 if __name__ == "__main__":

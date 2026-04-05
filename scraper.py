@@ -42,6 +42,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "crawlbase":   "https://api.crawlbase.com/",
     "zenrows":     "https://api.zenrows.com/v1/",
     "floppydata":  "https://client-api.floppy.host/v1/webUnlocker",
+    "oxylabs":     "https://realtime.oxylabs.io/v1/queries",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "playwright":  "",
@@ -50,6 +51,7 @@ _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "crawlbase":   "CRAWLBASE_TOKEN",
     "zenrows":     "ZENROWS_API_KEY",
     "floppydata":  "FLOPPYDATA_API_KEY",
+    "oxylabs":     "OXYLABS_API_KEY",
     "direct":      "",
 }
 
@@ -171,6 +173,21 @@ def _compute_backoff(attempt: int, base_seconds: float, max_seconds: float) -> f
     """
     exp = min(base_seconds * (2 ** attempt), max_seconds)
     return exp * (0.75 + 0.5 * random.random())
+
+
+_OXYLABS_GEOLOCATIONS: dict[str, str] = {
+    "nz": "New Zealand",
+    "au": "Australia",
+    "us": "United States",
+    "gb": "United Kingdom",
+}
+
+
+def _oxylabs_geo_location(country_code: str) -> str:
+    normalized = (country_code or "").strip().lower()
+    if not normalized:
+        return ""
+    return _OXYLABS_GEOLOCATIONS.get(normalized, normalized.upper())
 
 
 # --- Scraper providers --------------------------------------------------------
@@ -367,6 +384,85 @@ class FloppyDataProvider(_BaseProvider):
             return None, {"error": str(exc)}, None
 
 
+class OxylabsProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "oxylabs"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["oxylabs"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        return {}
+
+    def _credentials(self) -> tuple[str, str]:
+        if ":" not in self.api_key:
+            raise ValueError(
+                "Oxylabs requires USERNAME:PASSWORD credentials. "
+                "Set OXYLABS_API_KEY to that value, set OXYLABS_USERNAME and OXYLABS_PASSWORD, "
+                "or pass --api-key USERNAME:PASSWORD."
+            )
+        return self.api_key.split(":", 1)
+
+    def _build_payload(self, url: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "source": "universal",
+            "url": url,
+        }
+        geo_location = _oxylabs_geo_location(self.country_code)
+        if geo_location:
+            payload["geo_location"] = geo_location
+        if self.render_wait_ms > 0:
+            payload["render"] = "html"
+        if self.premium_proxy:
+            payload["user_agent_type"] = "desktop"
+        return payload
+
+    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        payload = self._build_payload(url)
+        try:
+            username, password = self._credentials()
+            auth = aiohttp.BasicAuth(username, password)
+            async with session.post(self._endpoint(), json=payload, headers=headers, auth=auth, timeout=60) as response:
+                status = response.status
+                text = await response.text()
+                if status != 200:
+                    try:
+                        payload = json.loads(text)
+                    except Exception:
+                        payload = {"error": f"HTTP {status}", "response": text[:300]}
+                    return None, payload, status
+
+                try:
+                    payload = json.loads(text)
+                except Exception:
+                    if "<html" in text.lower() or "<!doctype" in text.lower():
+                        return text, None, status
+                    return None, {"error": "Invalid non-JSON response", "response": text[:300]}, status
+
+                if isinstance(payload, dict):
+                    results = payload.get("results")
+                    if isinstance(results, list) and results and isinstance(results[0], dict):
+                        first_result = results[0]
+                        html = first_result.get("content") or first_result.get("html")
+                        if isinstance(html, str) and html.strip():
+                            return html, None, status
+                    html = payload.get("html")
+                    if isinstance(html, str) and html.strip():
+                        return html, None, status
+                    return None, payload or {"error": "Missing content in response"}, status
+
+                return None, {"error": "Unexpected response payload", "response": text[:300]}, status
+        except asyncio.TimeoutError:
+            return None, {"error": "Timeout after 60 seconds"}, None
+        except Exception as exc:
+            return None, {"error": str(exc)}, None
+
+
 class DirectProvider:
     """Fetch URLs directly without a proxy (for testing or non-protected sites)."""
 
@@ -395,7 +491,7 @@ class DirectProvider:
             return None, {"error": str(exc)}, None
 
 
-AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | DirectProvider
+AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | OxylabsProvider | DirectProvider
 
 
 def build_provider(
@@ -408,6 +504,12 @@ def build_provider(
     if provider_name == "direct":
         return DirectProvider()
     if not api_key:
+        if provider_name == "oxylabs":
+            raise ValueError(
+                "Provider 'oxylabs' requires credentials. "
+                "Set OXYLABS_API_KEY to USERNAME:PASSWORD, set OXYLABS_USERNAME and OXYLABS_PASSWORD, "
+                "or pass --api-key USERNAME:PASSWORD."
+            )
         env_hint = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
         hint = f"Set {env_hint} or pass --api-key." if env_hint else "Pass --api-key."
         raise ValueError(f"Provider '{provider_name}' requires an API key. {hint}")
@@ -417,6 +519,7 @@ def build_provider(
         "crawlbase":   CrawlbaseProvider,
         "zenrows":     ZenrowsProvider,
         "floppydata":  FloppyDataProvider,
+        "oxylabs":     OxylabsProvider,
     }
     cls = cls_map.get(provider_name)
     if cls is None:
@@ -2851,9 +2954,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        default="floppydata",
-        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "floppydata", "direct", "playwright"],
-        help="Scraping provider/engine to use (default: floppydata).",
+        default="oxylabs",
+        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "floppydata", "oxylabs", "direct", "playwright"],
+        help="Scraping provider/engine to use (default: oxylabs).",
     )
     parser.add_argument(
         "--site-profile",
@@ -2887,7 +2990,7 @@ async def main() -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY, FLOPPYDATA_API_KEY).",
+        help="Scraping provider API key or credentials. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY, FLOPPYDATA_API_KEY, OXYLABS_API_KEY). For Oxylabs use USERNAME:PASSWORD.",
     )
     parser.add_argument(
         "--persist-db",
@@ -2919,7 +3022,17 @@ async def main() -> None:
         return
 
     env_var = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
-    api_key: str | None = args.api_key or (os.getenv(env_var) if env_var else None)
+    api_key: str | None = args.api_key
+    if not api_key:
+        if provider_name == "oxylabs":
+            api_key = os.getenv("OXYLABS_API_KEY")
+            if not api_key:
+                oxylabs_username = os.getenv("OXYLABS_USERNAME")
+                oxylabs_password = os.getenv("OXYLABS_PASSWORD")
+                if oxylabs_username and oxylabs_password:
+                    api_key = f"{oxylabs_username}:{oxylabs_password}"
+        else:
+            api_key = os.getenv(env_var) if env_var else None
     render_wait_ms: int = (
         args.render_wait_ms if args.render_wait_ms is not None else args.scrapingbee_wait_ms
     )

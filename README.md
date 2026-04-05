@@ -1,6 +1,6 @@
 # NZ Supermarket Scraper
 
-Scrapes product names, prices, unit prices, promo prices, and images from supported NZ supermarket category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, ZenRows, FloppyData, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
+Scrapes product names, prices, unit prices, promo prices, and images from supported NZ supermarket category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, ZenRows, FloppyData, Oxylabs, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
 
 ## Supported supermarkets
 
@@ -28,14 +28,19 @@ python -m playwright install firefox
 python -m playwright install-deps firefox
 ```
 
-Export your API key for the chosen provider (default: FloppyData):
+Export your API key for the chosen provider (default: Oxylabs):
 
 ```bash
-export SCRAPING_PROVIDER_API_KEY="your_key_here"   # ScrapingBee (default)
+export OXYLABS_API_KEY="USERNAME:PASSWORD"   # Oxylabs Web Scraper API (default)
+# or set them separately:
+export OXYLABS_USERNAME="USERNAME"
+export OXYLABS_PASSWORD="PASSWORD"
+
+export FLOPPYDATA_API_KEY="your_key_here"    # FloppyData Web Unlocker
+export SCRAPING_PROVIDER_API_KEY="your_key_here"   # ScrapingBee
 export SCRAPERAPI_KEY="your_key_here"        # ScraperAPI
 export CRAWLBASE_TOKEN="your_key_here"       # Crawlbase
 export ZENROWS_API_KEY="your_key_here"       # ZenRows
-export FLOPPYDATA_API_KEY="your_key_here"    # FloppyData Web Unlocker
 ```
 
 Or pass it directly with `--api-key`. No key is needed for `--provider direct`.
@@ -278,17 +283,18 @@ python scraper.py \
 
 | Flag | Default | Description |
 |---|---|---|
-| `--provider NAME` | `floppydata` | Scraping service/engine to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `direct`, `playwright`. |
+| `--provider NAME` | `oxylabs` | Scraping service/engine to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`, `playwright`. |
 | `--country-code CC` | `nz` | Country code for proxy targeting (e.g. `us`, `gb`, `au`). |
 | `--premium-proxy` / `--no-premium-proxy` | on | Use residential/premium proxies when supported by the provider. |
 | `--render-wait-ms N` | `3000` | Milliseconds to wait for JavaScript rendering (provider-agnostic). Overrides `--scrapingbee-wait-ms` when set. |
-| `--api-key KEY` | env var | Provider API key. Falls back to the provider-specific env var: `SCRAPING_PROVIDER_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, `ZENROWS_API_KEY`, or `FLOPPYDATA_API_KEY`. Not required for `--provider direct` or `--provider playwright`. |
+| `--api-key KEY` | env var | Provider API key or credentials. Falls back to `SCRAPING_PROVIDER_API_KEY`, `SCRAPERAPI_KEY`, `CRAWLBASE_TOKEN`, `ZENROWS_API_KEY`, `FLOPPYDATA_API_KEY`, or `OXYLABS_API_KEY`. For Oxylabs, use `USERNAME:PASSWORD` or set `OXYLABS_USERNAME` and `OXYLABS_PASSWORD`. Not required for `--provider direct` or `--provider playwright`. |
 
 ### Authentication
 
 | Provider | Environment variable |
 |---|---|
-| `floppydata` (default) | `FLOPPYDATA_API_KEY` |
+| `oxylabs` (default) | `OXYLABS_API_KEY` or `OXYLABS_USERNAME` + `OXYLABS_PASSWORD` |
+| `floppydata` | `FLOPPYDATA_API_KEY` |
 | `scrapingbee` | `SCRAPING_PROVIDER_API_KEY` |
 | `scraperapi` | `SCRAPERAPI_KEY` |
 | `crawlbase` | `CRAWLBASE_TOKEN` |
@@ -451,6 +457,7 @@ This workflow is intentionally lightweight and does not require provider API key
 
 Set the secret matching the provider you plan to use in **Repository Settings → Secrets and variables → Actions**.
 
+- `OXYLABS_API_KEY` *(set to `USERNAME:PASSWORD`)* or `OXYLABS_USERNAME` + `OXYLABS_PASSWORD`
 - `SCRAPING_PROVIDER_API_KEY` (used for ScrapingBee)
 - `SCRAPERAPI_KEY`
 - `CRAWLBASE_TOKEN`
@@ -465,7 +472,7 @@ No secret is needed for `direct` or `playwright` mode.
 |---|---|---|
 | `url` | retailer-specific example | Optional category/start URL to scrape. Leave blank to use the default for the selected retailer profile. |
 | `site_profile` | `auto` | Auto-detect or force `newworld`, `paknsave`, or `woolworths`. |
-| `provider` | `floppydata` | Default managed provider. Switch to `playwright` for the lowest-credit path, or to `zenrows`, `scraperapi`, etc. if needed. |
+| `provider` | `oxylabs` | Default managed provider. Switch to `playwright` for the lowest-credit path, or to `floppydata`, `zenrows`, `scraperapi`, etc. if needed. |
 | `limit` | `20` | Max products per page URL. Ignored when `count_only=true` because no products are scraped. |
 | `max_pages` | `3` | Max resolved page URLs to scrape in total. |
 | `discover_category_urls` | `false` | Start from the given URL, discover category URLs, then crawl each category. |
@@ -535,6 +542,6 @@ If you need ad-hoc local validation, run the scraper directly with the examples 
 
 ## API-Only Note
 
-When using API-based providers (`scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `direct`), the Playwright-only store/browser flags are accepted by the CLI but have no effect.
+When using API-based providers (`scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`), the Playwright-only store/browser flags are accepted by the CLI but have no effect.
 
 `--headed`, `--headless-only`, `--manual-wait-seconds`, `--storage-state`, `--wait-for-selector`, `--choose-store`, `--scrape-all-stores`, `--max-stores`, `--store-name`, `--store-names`, `--store-index`, `--store-ribbon-button-selector`, `--store-change-link-selector`, `--store-bar-selector`

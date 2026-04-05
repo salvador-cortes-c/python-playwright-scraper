@@ -8,9 +8,9 @@ on:
         required: false
         default: "auto"
       provider:
-        description: "Provider to use for the check. `floppydata` is the default managed option; switch to `playwright` for the lowest-credit path if preferred."
+        description: "Provider to use for the check. `oxylabs` is the default managed option; switch to `playwright` for the lowest-credit path if preferred."
         required: false
-        default: "floppydata"
+        default: "oxylabs"
       store_city:
         description: "Optional city filter for stores (e.g. Wellington)"
         required: false
@@ -36,6 +36,9 @@ jobs:
     env:
       ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
       FLOPPYDATA_API_KEY: ${{ secrets.FLOPPYDATA_API_KEY }}
+      OXYLABS_API_KEY: ${{ secrets.OXYLABS_API_KEY }}
+      OXYLABS_USERNAME: ${{ secrets.OXYLABS_USERNAME }}
+      OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
       PROVIDER: ${{ inputs.provider }}
     steps:
       - name: Checkout repository
@@ -115,6 +118,15 @@ jobs:
         run: |
           if [ -z "${FLOPPYDATA_API_KEY:-}" ]; then
             echo "FLOPPYDATA_API_KEY is not set in repository secrets"
+            exit 1
+          fi
+
+      - name: Validate Oxylabs credentials
+        if: ${{ inputs.provider == 'oxylabs' }}
+        run: |
+          if [ -z "${OXYLABS_API_KEY:-}" ] && { [ -z "${OXYLABS_USERNAME:-}" ] || [ -z "${OXYLABS_PASSWORD:-}" ]; }; then
+            echo "Oxylabs credentials are not set in repository secrets"
+            echo "Add OXYLABS_API_KEY as USERNAME:PASSWORD, or set OXYLABS_USERNAME and OXYLABS_PASSWORD"
             exit 1
           fi
 
