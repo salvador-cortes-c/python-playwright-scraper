@@ -75,6 +75,10 @@ Selected page counts from that verification:
   - `Discovered 15 category URLs from: https://www.paknsave.co.nz/`
   - `Total category pages across all categories: 81`
   - `Count summary: categories=15, pages=81`
+- **Fresh low-credit re-check (2026-04-05):**
+  - the public `ecom_sitemap_categories.xml` currently exposes **825** category/subcategory URLs, which confirms the category tree is much larger than just the 15 top-level categories but is **not** the same metric as top-level paginated page count
+  - direct raw fetches of `/shop/category/...` from this environment currently return the Cloudflare **`Just a moment...`** challenge page
+  - a fresh local `--provider playwright` headless validation also hit the same bot challenge, so **`81` remains the best currently verified low-credit total** in this environment
 
 ---
 
