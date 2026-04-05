@@ -17,9 +17,9 @@ name: Daily Product Scrape
         required: false
         default: 'auto'
       provider:
-        description: 'Scraping provider/engine. `playwright` is the lowest-credit default; use a paid provider only when anti-bot protection requires it.'
+        description: 'Scraping provider/engine. `floppydata` is the default managed provider; switch to `playwright` for the lowest-credit path or to another paid provider if needed.'
         required: false
-        default: 'playwright'
+        default: 'floppydata'
       limit:
         description: 'Max products to scrape'
         required: false
@@ -93,7 +93,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ github.event.inputs.provider == 'playwright' || github.event.inputs.provider == '' || github.event_name == 'schedule' }}
+        if: ${{ github.event.inputs.provider == 'playwright' }}
         run: |
           python -m playwright install firefox
           python -m playwright install-deps firefox
@@ -104,11 +104,12 @@ jobs:
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           CRAWLBASE_TOKEN: ${{ secrets.CRAWLBASE_TOKEN }}
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+          FLOPPYDATA_API_KEY: ${{ secrets.FLOPPYDATA_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           URL="${{ github.event.inputs.url || '' }}"
           SITE_PROFILE="${{ github.event.inputs.site_profile || 'auto' }}"
-          PROVIDER="${{ github.event.inputs.provider || 'playwright' }}"
+          PROVIDER="${{ github.event.inputs.provider || 'floppydata' }}"
           LIMIT="${{ github.event.inputs.limit || '20' }}"
           MAX_PAGES="${{ github.event.inputs.max_pages || '3' }}"
           DISCOVER_CATEGORY_URLS="${{ github.event.inputs.discover_category_urls || 'false' }}"
@@ -225,6 +226,17 @@ jobs:
             echo "   2. Click 'New repository secret'"
             echo "   3. Name: SCRAPERAPI_KEY"
             echo "   4. Value: Your ScraperAPI key"
+            exit 1
+          fi
+
+          if [ "$PROVIDER" = "floppydata" ] && [ -z "$FLOPPYDATA_API_KEY" ]; then
+            echo "❌ ERROR: FLOPPYDATA_API_KEY secret not set"
+            echo ""
+            echo "💡 How to set it:"
+            echo "   1. Go to Repository Settings → Secrets and variables → Actions"
+            echo "   2. Click 'New repository secret'"
+            echo "   3. Name: FLOPPYDATA_API_KEY"
+            echo "   4. Value: Your FloppyData API key"
             exit 1
           fi
 
@@ -352,7 +364,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow run:** $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Provider:** ${{ github.event.inputs.provider || 'playwright' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Provider:** ${{ github.event.inputs.provider || 'floppydata' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Site profile:** ${{ github.event.inputs.site_profile || 'auto' }}" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "**Manual run with URL:** ${{ github.event.inputs.url || 'default' }}" >> $GITHUB_STEP_SUMMARY

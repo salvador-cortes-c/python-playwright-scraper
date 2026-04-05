@@ -41,6 +41,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "scraperapi":  "http://api.scraperapi.com/",
     "crawlbase":   "https://api.crawlbase.com/",
     "zenrows":     "https://api.zenrows.com/v1/",
+    "floppydata":  "https://client-api.floppy.host/v1/webUnlocker",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "playwright":  "",
@@ -48,6 +49,7 @@ _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "scraperapi":  "SCRAPERAPI_KEY",
     "crawlbase":   "CRAWLBASE_TOKEN",
     "zenrows":     "ZENROWS_API_KEY",
+    "floppydata":  "FLOPPYDATA_API_KEY",
     "direct":      "",
 }
 
@@ -306,6 +308,65 @@ class ZenrowsProvider(_BaseProvider):
         return params
 
 
+class FloppyDataProvider(_BaseProvider):
+    @property
+    def name(self) -> str:
+        return "floppydata"
+
+    def _endpoint(self) -> str:
+        return _PROVIDER_ENDPOINTS["floppydata"]
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        return {}
+
+    def _build_payload(self, url: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "url": url,
+            "difficulty": "medium" if self.premium_proxy else "low",
+            "expiration": 0,
+        }
+        if self.country_code:
+            payload["country"] = self.country_code.upper()
+        return payload
+
+    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+        headers = {
+            "X-Api-Key": self.api_key,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        payload = self._build_payload(url)
+        try:
+            async with session.post(self._endpoint(), json=payload, headers=headers, timeout=60) as response:
+                status = response.status
+                text = await response.text()
+                if status != 200:
+                    try:
+                        payload = json.loads(text)
+                    except Exception:
+                        payload = {"error": f"HTTP {status}", "response": text[:300]}
+                    return None, payload, status
+
+                try:
+                    payload = json.loads(text)
+                except Exception:
+                    if "<html" in text.lower() or "<!doctype" in text.lower():
+                        return text, None, status
+                    return None, {"error": "Invalid non-JSON response", "response": text[:300]}, status
+
+                if isinstance(payload, dict):
+                    html = payload.get("html")
+                    if isinstance(html, str) and html.strip():
+                        return html, None, status
+                    return None, payload or {"error": "Missing html in response"}, status
+
+                return None, {"error": "Unexpected response payload", "response": text[:300]}, status
+        except asyncio.TimeoutError:
+            return None, {"error": "Timeout after 60 seconds"}, None
+        except Exception as exc:
+            return None, {"error": str(exc)}, None
+
+
 class DirectProvider:
     """Fetch URLs directly without a proxy (for testing or non-protected sites)."""
 
@@ -334,7 +395,7 @@ class DirectProvider:
             return None, {"error": str(exc)}, None
 
 
-AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | DirectProvider
+AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | DirectProvider
 
 
 def build_provider(
@@ -355,6 +416,7 @@ def build_provider(
         "scraperapi":  ScraperAPIProvider,
         "crawlbase":   CrawlbaseProvider,
         "zenrows":     ZenrowsProvider,
+        "floppydata":  FloppyDataProvider,
     }
     cls = cls_map.get(provider_name)
     if cls is None:
@@ -2789,9 +2851,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        default="scrapingbee",
-        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "direct", "playwright"],
-        help="Scraping provider/engine to use (default: scrapingbee).",
+        default="floppydata",
+        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "floppydata", "direct", "playwright"],
+        help="Scraping provider/engine to use (default: floppydata).",
     )
     parser.add_argument(
         "--site-profile",
@@ -2825,7 +2887,7 @@ async def main() -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY).",
+        help="Scraping provider API key. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY, FLOPPYDATA_API_KEY).",
     )
     parser.add_argument(
         "--persist-db",

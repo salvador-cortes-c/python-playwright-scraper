@@ -8,9 +8,9 @@ on:
         required: false
         default: "auto"
       provider:
-        description: "Provider to use for the low-cost check. `playwright` is the default; switch to `zenrows` only if anti-bot protection blocks the run."
+        description: "Provider to use for the check. `floppydata` is the default managed option; switch to `playwright` for the lowest-credit path if preferred."
         required: false
-        default: "playwright"
+        default: "floppydata"
       store_city:
         description: "Optional city filter for stores (e.g. Wellington)"
         required: false
@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+      FLOPPYDATA_API_KEY: ${{ secrets.FLOPPYDATA_API_KEY }}
       PROVIDER: ${{ inputs.provider }}
     steps:
       - name: Checkout repository
@@ -106,6 +107,14 @@ jobs:
         run: |
           if [ -z "${ZENROWS_API_KEY:-}" ]; then
             echo "ZENROWS_API_KEY is not set in repository secrets"
+            exit 1
+          fi
+
+      - name: Validate FloppyData key
+        if: ${{ inputs.provider == 'floppydata' }}
+        run: |
+          if [ -z "${FLOPPYDATA_API_KEY:-}" ]; then
+            echo "FLOPPYDATA_API_KEY is not set in repository secrets"
             exit 1
           fi
 
