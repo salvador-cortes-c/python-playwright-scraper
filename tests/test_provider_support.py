@@ -125,7 +125,7 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
         method, url, kwargs = session.calls[0]
         self.assertEqual(method, "get")
         self.assertEqual(url, "https://example.com/products")
-        self.assertEqual(kwargs["proxy"], "https://unblock.oxylabs.io:60000")
+        self.assertEqual(kwargs["proxy"], "http://unblock.oxylabs.io:60000")
         self.assertEqual(kwargs["proxy_auth"].login, "user")
         self.assertEqual(kwargs["proxy_auth"].password, "pass")
         self.assertEqual(kwargs["headers"]["X-Oxylabs-Geo-Location"], "New Zealand")

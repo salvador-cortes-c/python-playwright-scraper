@@ -42,7 +42,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "crawlbase":   "https://api.crawlbase.com/",
     "zenrows":     "https://api.zenrows.com/v1/",
     "floppydata":  "https://client-api.floppy.host/v1/webUnlocker",
-    "oxylabs":     "https://unblock.oxylabs.io:60000",
+    "oxylabs":     "http://unblock.oxylabs.io:60000",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "playwright":  "",
