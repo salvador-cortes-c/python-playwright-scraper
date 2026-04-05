@@ -42,7 +42,7 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "crawlbase":   "https://api.crawlbase.com/",
     "zenrows":     "https://api.zenrows.com/v1/",
     "floppydata":  "https://client-api.floppy.host/v1/webUnlocker",
-    "oxylabs":     "https://realtime.oxylabs.io/v1/queries",
+    "oxylabs":     "https://unblock.oxylabs.io:60000",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
     "playwright":  "",
@@ -404,61 +404,42 @@ class OxylabsProvider(_BaseProvider):
             )
         return self.api_key.split(":", 1)
 
-    def _build_payload(self, url: str) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "source": "universal",
-            "url": url,
+    def _build_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-NZ,en;q=0.9",
+            "X-Oxylabs-Force-Headers": "1",
         }
         geo_location = _oxylabs_geo_location(self.country_code)
         if geo_location:
-            payload["geo_location"] = geo_location
+            headers["X-Oxylabs-Geo-Location"] = geo_location
         if self.render_wait_ms > 0:
-            payload["render"] = "html"
-        if self.premium_proxy:
-            payload["user_agent_type"] = "desktop"
-        return payload
+            headers["X-Oxylabs-Render"] = "html"
+        return headers
 
     async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        payload = self._build_payload(url)
+        headers = self._build_headers()
         try:
             username, password = self._credentials()
-            auth = aiohttp.BasicAuth(username, password)
-            async with session.post(self._endpoint(), json=payload, headers=headers, auth=auth, timeout=60) as response:
+            proxy_auth = aiohttp.BasicAuth(username, password)
+            async with session.get(
+                url,
+                headers=headers,
+                timeout=90,
+                proxy=self._endpoint(),
+                proxy_auth=proxy_auth,
+                ssl=False,
+            ) as response:
                 status = response.status
                 text = await response.text()
-                if status != 200:
-                    try:
-                        payload = json.loads(text)
-                    except Exception:
-                        payload = {"error": f"HTTP {status}", "response": text[:300]}
-                    return None, payload, status
-
-                try:
-                    payload = json.loads(text)
-                except Exception:
-                    if "<html" in text.lower() or "<!doctype" in text.lower():
-                        return text, None, status
-                    return None, {"error": "Invalid non-JSON response", "response": text[:300]}, status
-
-                if isinstance(payload, dict):
-                    results = payload.get("results")
-                    if isinstance(results, list) and results and isinstance(results[0], dict):
-                        first_result = results[0]
-                        html = first_result.get("content") or first_result.get("html")
-                        if isinstance(html, str) and html.strip():
-                            return html, None, status
-                    html = payload.get("html")
-                    if isinstance(html, str) and html.strip():
-                        return html, None, status
-                    return None, payload or {"error": "Missing content in response"}, status
-
-                return None, {"error": "Unexpected response payload", "response": text[:300]}, status
+                if status not in (200, 201):
+                    return None, {"error": f"HTTP {status}", "response": text[:300]}, status
+                if "<html" in text.lower() or "<!doctype" in text.lower():
+                    return text, None, status
+                return None, {"error": "Non-HTML response", "response": text[:300]}, status
         except asyncio.TimeoutError:
-            return None, {"error": "Timeout after 60 seconds"}, None
+            return None, {"error": "Timeout after 90 seconds"}, None
         except Exception as exc:
             return None, {"error": str(exc)}, None
 
