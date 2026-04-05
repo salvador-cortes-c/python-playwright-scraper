@@ -13,11 +13,13 @@ import os
 import random
 import re
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
+from urllib.request import Request, urlopen
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
@@ -1181,6 +1183,13 @@ def _collect_page_numbers_from_raw_html(html: str, page_numbers: set[int]) -> No
                     page_numbers.add((total_items + page_size - 1) // page_size)
 
 
+def _default_page_size_for_url(start_url: str) -> int | None:
+    host = urlparse(start_url).netloc.lower()
+    if "woolworths.co.nz" in host or "countdown.co.nz" in host:
+        return 48
+    return None
+
+
 def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     href_elements = soup.select("a[href*='pg='], a[href*='page=']")
@@ -1245,6 +1254,9 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
         )
         if detected_page_size > 0:
             query_page_size = detected_page_size
+
+    if not query_page_size:
+        query_page_size = _default_page_size_for_url(start_url)
 
     if query_page_size:
         for match in re.finditer(r"\b(\d{2,6})\s+(?:items|products?)\b", page_text, re.IGNORECASE):
@@ -1578,6 +1590,67 @@ def discover_store_records_from_html(html: str) -> list[StoreRecord]:
     return sorted(records_by_name.values(), key=lambda item: item.name)
 
 
+def _fetch_public_sitemap_urls(url: str) -> list[str]:
+    try:
+        request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=60) as response:
+            xml_text = response.read().decode("utf-8", errors="replace")
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    for element in root.iter():
+        if element.tag.split("}")[-1].lower() != "loc" or not element.text:
+            continue
+        value = _clean_text(element.text)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        urls.append(value)
+    return urls
+
+
+def _discover_public_store_urls(site_profile: str) -> list[str]:
+    site = (site_profile or "").strip().lower()
+    if site == "woolworths":
+        urls = _fetch_public_sitemap_urls("https://www.woolworths.co.nz/sitemap.xml")
+        return sorted(
+            {
+                url
+                for url in urls
+                if re.search(r"/store-finder/\d+/[^/]+/[^/]+$", urlparse(url).path)
+            }
+        )
+    if site == "paknsave":
+        urls = _fetch_public_sitemap_urls("https://www.paknsave.co.nz/brandssitemap.xml")
+        return sorted(
+            {
+                url
+                for url in urls
+                if re.search(
+                    r"/(?:upper-north-island|lower-north-island|south-island)/[^/]+/[^/]+$",
+                    urlparse(url).path,
+                )
+            }
+        )
+    return []
+
+
+def _filter_store_urls_by_city(store_urls: list[str], store_cities: list[str]) -> list[str]:
+    if not store_cities:
+        return sorted(store_urls)
+
+    filtered: list[str] = []
+    tokens = [city.lower().strip() for city in store_cities if city.strip()]
+    for store_url in store_urls:
+        haystack = urlparse(store_url).path.lower().replace("_", "-")
+        if any(token in haystack or token.replace(" ", "-") in haystack for token in tokens):
+            filtered.append(store_url)
+    return sorted(filtered)
+
+
 def _collect_store_names_from_json(data: Any, out: set[str], depth: int = 0) -> None:
     """Recursively walk a JSON structure collecting values that look like store names."""
     if depth > 30:
@@ -1866,9 +1939,8 @@ async def discover_store_names_playwright(page: Any, start_url: str, args: argpa
 
 
 async def count_stores_playwright(page: Any, start_url: str, args: argparse.Namespace) -> int:
-    """Count stores by extracting __NEXT_DATA__ from the fulfillment page HTML."""
+    """Count stores from rendered HTML, the live store picker, or public retailer sitemaps."""
     await _playwright_navigate(page, start_url, args, "counting stores")
-    # Wait up to 30s for __NEXT_DATA__ to appear (Cloudflare JS challenge may redirect first)
     try:
         await page.wait_for_function(
             "() => !!document.getElementById('__NEXT_DATA__')",
@@ -1876,23 +1948,39 @@ async def count_stores_playwright(page: Any, start_url: str, args: argparse.Name
         )
     except Exception:
         pass
+
     html = await page.content()
+    store_cities = _normalize_store_cities(args.store_city)
     store_records = discover_store_records_from_html(html)
     store_names = [record.name for record in store_records] or discover_store_names_from_html(html)
+
     if not store_names:
-        raise RuntimeError(
-            "No store options were detected in Playwright HTML. "
-            f"[diag] HTML length={len(html)} has_next_data={'__NEXT_DATA__' in html}"
-        )
-    store_cities = _normalize_store_cities(args.store_city)
-    _print_store_record_debug(store_records, store_cities)
-    if store_records:
-        filtered = [record.name for record in _filter_store_records_by_city(store_records, store_cities)]
-    else:
-        filtered = _filter_store_names_by_city(store_names, store_cities)
-    if store_cities:
-        print(f"City filter applied ({', '.join(store_cities)}): {len(filtered)} stores matched")
-    return len(filtered)
+        try:
+            store_names = await discover_store_names_playwright(page, start_url, args)
+        except Exception:
+            store_names = []
+
+    if store_names:
+        _print_store_record_debug(store_records, store_cities)
+        if store_records:
+            filtered = [record.name for record in _filter_store_records_by_city(store_records, store_cities)]
+        else:
+            filtered = _filter_store_names_by_city(store_names, store_cities)
+        if store_cities:
+            print(f"City filter applied ({', '.join(store_cities)}): {len(filtered)} stores matched")
+        return len(filtered)
+
+    public_store_urls = _filter_store_urls_by_city(_discover_public_store_urls(args.site_profile), store_cities)
+    if public_store_urls:
+        if store_cities:
+            print(f"City filter applied ({', '.join(store_cities)}): {len(public_store_urls)} stores matched")
+        print(f"Using public sitemap fallback for store count ({len(public_store_urls)} stores)")
+        return len(public_store_urls)
+
+    raise RuntimeError(
+        "No store options were detected in Playwright HTML. "
+        f"[diag] HTML length={len(html)} has_next_data={'__NEXT_DATA__' in html}"
+    )
 
 
 async def discover_category_urls_playwright(
@@ -1924,6 +2012,12 @@ async def discover_category_page_urls_playwright(
     args: argparse.Namespace,
 ) -> list[str]:
     await _playwright_navigate(page, start_url, args, "discovering paginated category URLs")
+    if args.wait_for_selector:
+        try:
+            await page.wait_for_selector(args.wait_for_selector, timeout=15000)
+            await page.wait_for_timeout(1000)
+        except Exception:
+            pass
     html = await page.content()
     return discover_category_page_urls_from_html(start_url=start_url, html=html)
 
