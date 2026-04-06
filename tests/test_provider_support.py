@@ -105,7 +105,7 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["json"]["difficulty"], "medium")
         self.assertEqual(kwargs["json"]["expiration"], 0)
 
-    async def test_oxylabs_provider_uses_web_unblocker_proxy_and_extracts_html(self):
+    async def test_oxylabs_provider_posts_basic_auth_payload_and_extracts_html(self):
         provider = build_provider(
             provider_name="oxylabs",
             api_key="user:pass",
@@ -113,7 +113,7 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
             country_code="nz",
             premium_proxy=True,
         )
-        session = _FakeSession('<html><body>ok</body></html>')
+        session = _FakeSession('{"results": [{"content": "<html><body>ok</body></html>"}]}')
 
         html, error, status = await provider.fetch(session, "https://example.com/products")
 
@@ -123,15 +123,15 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
 
         method, url, kwargs = session.calls[0]
-        self.assertEqual(method, "get")
-        self.assertEqual(url, "https://example.com/products")
-        self.assertEqual(kwargs["proxy"], "http://unblock.oxylabs.io:60000")
-        self.assertEqual(kwargs["proxy_auth"].login, "user")
-        self.assertEqual(kwargs["proxy_auth"].password, "pass")
-        self.assertEqual(kwargs["headers"]["X-Oxylabs-Geo-Location"], "New Zealand")
-        self.assertEqual(kwargs["headers"]["X-Oxylabs-Render"], "html")
-        self.assertEqual(kwargs["headers"]["X-Oxylabs-Force-Headers"], "1")
-        self.assertFalse(kwargs["ssl"])
+        self.assertEqual(method, "post")
+        self.assertEqual(url, "https://realtime.oxylabs.io/v1/queries")
+        self.assertEqual(kwargs["json"]["source"], "universal")
+        self.assertEqual(kwargs["json"]["url"], "https://example.com/products")
+        self.assertEqual(kwargs["json"]["geo_location"], "New Zealand")
+        self.assertEqual(kwargs["json"]["render"], "html")
+        self.assertEqual(kwargs["json"]["user_agent_type"], "desktop")
+        self.assertEqual(kwargs["auth"].login, "user")
+        self.assertEqual(kwargs["auth"].password, "pass")
 
 
 if __name__ == "__main__":

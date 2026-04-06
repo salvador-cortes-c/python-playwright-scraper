@@ -31,7 +31,7 @@ python -m playwright install-deps firefox
 Export your API key for the chosen provider (default: Oxylabs):
 
 ```bash
-export OXYLABS_API_KEY="USERNAME:PASSWORD"   # Oxylabs Web Unblocker (default)
+export OXYLABS_API_KEY="USERNAME:PASSWORD"   # Oxylabs Web Scraper API (default)
 # or set them separately:
 export OXYLABS_USERNAME="USERNAME"
 export OXYLABS_PASSWORD="PASSWORD"
