@@ -413,6 +413,46 @@ class CategoryDiscoveryTests(unittest.TestCase):
         self.assertEqual(snapshots[0].price, "3.30")
         self.assertEqual(snapshots[0].unit_price, "$3.30 / 1kg")
 
+    def test_scrape_products_from_html_skips_price_only_tiles_and_infers_packaging_from_name(self):
+        html = '''
+        <div class="product-entry">
+          <product-price>
+            <h3 id="product-bad-price">$ <em>5</em><span> 00 </span></h3>
+          </product-price>
+        </div>
+        <div class="product-entry">
+          <a href="/shop/productdetails?stockcode=1&amp;name=asahi-super-dry-beer">
+            <h3 id="product-1-title">Asahi Super Dry Beer Bottle 12x330mL</h3>
+          </a>
+          <product-price>
+            <h3 id="product-1-price">$ <em>24</em><span> 99 </span></h3>
+          </product-price>
+        </div>
+        '''
+
+        products, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48",
+            product_selector="div.product-entry",
+            name_selector="h3[id$='-title'], div.product-entry h3",
+            price_selector="h3[id$='-price'] em, product-price h3 em",
+            price_cents_selector="h3[id$='-price'] span, product-price h3 span",
+            unit_price_selector="span.cupPrice",
+            promo_price_dollars_selector="",
+            promo_price_cents_selector="",
+            promo_unit_price_selector="",
+            image_selector="a.productImage-container img, figure img",
+            limit=5,
+            query=None,
+        )
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(products[0].name, "Asahi Super Dry Beer Bottle 12x330mL")
+        self.assertEqual(products[0].packaging_format, "12x330mL")
+        self.assertEqual(products[0].product_key, "asahi super dry beer bottle 12x330ml__12x330ml")
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].price, "24.99")
+
 
 if __name__ == "__main__":
     unittest.main()

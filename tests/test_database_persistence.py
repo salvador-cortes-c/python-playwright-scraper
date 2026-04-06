@@ -9,11 +9,31 @@ from database import (
     _collect_category_rows,
     _find_category_id_for_source_url,
     _infer_supermarket_name,
+    _normalize_product_record,
     dedupe_price_snapshots,
 )
 
 
 class DatabasePersistenceTests(unittest.TestCase):
+    def test_normalize_product_record_infers_packaging_and_repairs_legacy_key(self):
+        normalized = _normalize_product_record(
+            "asahi beer super dry lager bottle 12x330ml__",
+            "Asahi Beer Super Dry Lager Bottle 12x330mL",
+            "",
+        )
+
+        self.assertEqual(
+            normalized,
+            (
+                "asahi beer super dry lager bottle 12x330ml__12x330ml",
+                "Asahi Beer Super Dry Lager Bottle 12x330mL",
+                "12x330mL",
+            ),
+        )
+
+    def test_normalize_product_record_rejects_price_only_names(self):
+        self.assertIsNone(_normalize_product_record("$ 5 00", "$ 5 00", ""))
+
     def test_infer_supermarket_name_from_store_or_url(self):
         self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")
         self.assertEqual(_infer_supermarket_name(store_name="Pak'nSave Albany"), "Pak'nSave")

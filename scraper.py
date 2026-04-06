@@ -721,8 +721,52 @@ def merge_snapshots(existing: list[ProductPriceSnapshot], new: list[ProductPrice
     return merged
 
 
+_PRICE_ONLY_NAME_RE = re.compile(
+    r"^\$?\s*\d+(?:[ .]\d{1,2})?(?:\s*(?:ea|each|kg|g|mg|l|ml|cl))?\s*$",
+    re.IGNORECASE,
+)
+
+_PACKAGING_IN_NAME_RE = re.compile(
+    r"""(?ix)
+    (
+        \d+\s*[x×]\s*\d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl)
+        |
+        \d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl|ea)
+        |
+        \d+\s*pack
+    )\b
+    """
+)
+
+
+def _looks_like_price_only_name(value: str | None) -> bool:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return False
+    return bool(_PRICE_ONLY_NAME_RE.fullmatch(cleaned))
+
+
+def _extract_packaging_from_name(name: str | None) -> str:
+    value = _clean_text(name)
+    if not value:
+        return ""
+
+    matches = list(_PACKAGING_IN_NAME_RE.finditer(value))
+    if not matches:
+        return ""
+
+    packaging = _clean_text(matches[-1].group(1))
+    packaging = re.sub(r"\s*[x×]\s*", "x", packaging)
+    packaging = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", packaging, flags=re.IGNORECASE)
+    return packaging.strip()
+
+
 def _product_key(name: str, packaging_format: str) -> str:
-    return f"{(name or '').strip()}__{(packaging_format or '').strip()}".lower()
+    clean_name = _clean_text(name)
+    clean_packaging = _clean_text(packaging_format)
+    if not clean_packaging:
+        return clean_name.lower()
+    return f"{clean_name}__{clean_packaging}".lower()
 
 
 def _replace_last_nth_child(selector: str, nth: int) -> str:
@@ -2599,13 +2643,13 @@ def scrape_products_from_html(
         elif promo_dollars_cleaned:
             promo_price = promo_dollars_cleaned
 
-        if not name:
+        if not name or _looks_like_price_only_name(name):
             continue
 
         if query_normalized and query_normalized not in name.lower():
             continue
 
-        packaging_format = _extract_packaging_format(unit_price)
+        packaging_format = _extract_packaging_format(unit_price) or _extract_packaging_from_name(name)
         product_key = _product_key(name, packaging_format)
 
         products.append(

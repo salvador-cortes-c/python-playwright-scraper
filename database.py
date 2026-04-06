@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
@@ -41,6 +42,63 @@ def _parse_price_to_cents(value: str | None) -> int | None:
         return int(round(float(cleaned) * 100))
     except Exception:
         return None
+
+
+_PRICE_ONLY_NAME_RE = re.compile(
+    r"^\$?\s*\d+(?:[ .]\d{1,2})?(?:\s*(?:ea|each|kg|g|mg|l|ml|cl))?\s*$",
+    re.IGNORECASE,
+)
+
+_PACKAGING_IN_NAME_RE = re.compile(
+    r"""(?ix)
+    (
+        \d+\s*[x×]\s*\d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl)
+        |
+        \d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl|ea)
+        |
+        \d+\s*pack
+    )\b
+    """
+)
+
+
+def _looks_like_price_only_name(value: str | None) -> bool:
+    cleaned = " ".join(str(value or "").split()).strip()
+    if not cleaned:
+        return False
+    return bool(_PRICE_ONLY_NAME_RE.fullmatch(cleaned))
+
+
+def _extract_packaging_from_name(name: str | None) -> str:
+    value = " ".join(str(name or "").split()).strip()
+    if not value:
+        return ""
+
+    matches = list(_PACKAGING_IN_NAME_RE.finditer(value))
+    if not matches:
+        return ""
+
+    packaging = " ".join(matches[-1].group(1).split()).strip()
+    packaging = re.sub(r"\s*[x×]\s*", "x", packaging)
+    packaging = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", packaging, flags=re.IGNORECASE)
+    return packaging.strip()
+
+
+def _normalize_product_record(
+    product_key: str | None,
+    name: str | None,
+    packaging_format: str | None,
+) -> tuple[str, str, str] | None:
+    clean_name = " ".join(str(name or "").split()).strip()
+    if not clean_name or _looks_like_price_only_name(clean_name):
+        return None
+
+    clean_packaging = " ".join(str(packaging_format or "").split()).strip()
+    if not clean_packaging:
+        clean_packaging = _extract_packaging_from_name(clean_name)
+
+    clean_key = f"{clean_name}__{clean_packaging}".lower() if clean_packaging else clean_name.lower()
+    return clean_key, clean_name, clean_packaging
 
 
 def _supermarket_code(name: str | None) -> str:
@@ -334,8 +392,15 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
                 name TEXT NOT NULL,
                 url TEXT NOT NULL UNIQUE,
                 source_url TEXT NOT NULL DEFAULT '',
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE categories
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             """
         )
         cur.execute(
@@ -412,6 +477,73 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
         )
 
     _backfill_supermarket_refs(conn)
+    _repair_product_catalog(conn)
+
+
+def _repair_product_catalog(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT product_key, name, packaging_format, image_url FROM products")
+        rows = cur.fetchall()
+
+    for product_key, name, packaging_format, image_url in rows:
+        normalized = _normalize_product_record(product_key, name, packaging_format)
+
+        with conn.cursor() as cur:
+            if normalized is None:
+                cur.execute("DELETE FROM products WHERE product_key = %s", (str(product_key),))
+                continue
+
+            normalized_key, clean_name, clean_packaging = normalized
+            if normalized_key != str(product_key):
+                cur.execute(
+                    """
+                    INSERT INTO products (product_key, name, packaging_format, image_url, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (product_key)
+                    DO UPDATE SET
+                        name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE products.name END,
+                        packaging_format = CASE
+                            WHEN EXCLUDED.packaging_format <> '' THEN EXCLUDED.packaging_format
+                            ELSE products.packaging_format
+                        END,
+                        image_url = CASE
+                            WHEN products.image_url = '' AND EXCLUDED.image_url <> '' THEN EXCLUDED.image_url
+                            ELSE products.image_url
+                        END,
+                        updated_at = NOW();
+                    """,
+                    (normalized_key, clean_name, clean_packaging, image_url or ""),
+                )
+                cur.execute(
+                    "UPDATE price_snapshots SET product_key = %s WHERE product_key = %s",
+                    (normalized_key, str(product_key)),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO product_categories (product_key, category_id)
+                    SELECT %s, category_id
+                    FROM product_categories
+                    WHERE product_key = %s
+                    ON CONFLICT (product_key, category_id)
+                    DO NOTHING;
+                    """,
+                    (normalized_key, str(product_key)),
+                )
+                cur.execute("DELETE FROM products WHERE product_key = %s", (str(product_key),))
+            else:
+                cur.execute(
+                    """
+                    UPDATE products
+                    SET name = %s,
+                        packaging_format = CASE
+                            WHEN %s <> '' THEN %s
+                            ELSE packaging_format
+                        END,
+                        updated_at = NOW()
+                    WHERE product_key = %s;
+                    """,
+                    (clean_name, clean_packaging, clean_packaging, str(product_key)),
+                )
 
 
 def _insert_crawl_run(
@@ -449,6 +581,37 @@ def persist_scrape_results(
     products = list(products)
     snapshots = dedupe_price_snapshots(list(snapshots))
     categories = list(categories)
+
+    normalized_products = []
+    key_overrides: dict[str, str] = {}
+    for product in products:
+        normalized = _normalize_product_record(
+            getattr(product, "product_key", ""),
+            getattr(product, "name", ""),
+            getattr(product, "packaging_format", ""),
+        )
+        original_key = str(getattr(product, "product_key", ""))
+        if normalized is None:
+            key_overrides[original_key] = ""
+            continue
+
+        normalized_key, clean_name, clean_packaging = normalized
+        key_overrides[original_key] = normalized_key
+        product.product_key = normalized_key
+        product.name = clean_name
+        product.packaging_format = clean_packaging
+        normalized_products.append(product)
+    products = normalized_products
+
+    normalized_snapshots = []
+    for snapshot in snapshots:
+        original_key = str(getattr(snapshot, "product_key", ""))
+        normalized_key = key_overrides.get(original_key, original_key)
+        if not normalized_key:
+            continue
+        snapshot.product_key = normalized_key
+        normalized_snapshots.append(snapshot)
+    snapshots = dedupe_price_snapshots(normalized_snapshots)
 
     with psycopg.connect(database_url) as conn:
         _ensure_schema(conn)
@@ -495,8 +658,14 @@ def persist_scrape_results(
                     VALUES (%s, %s, %s, %s, NOW())
                     ON CONFLICT (product_key)
                     DO UPDATE SET
-                        name = EXCLUDED.name,
-                        packaging_format = EXCLUDED.packaging_format,
+                        name = CASE
+                            WHEN EXCLUDED.name <> '' THEN EXCLUDED.name
+                            ELSE products.name
+                        END,
+                        packaging_format = CASE
+                            WHEN EXCLUDED.packaging_format <> '' THEN EXCLUDED.packaging_format
+                            ELSE products.packaging_format
+                        END,
                         image_url = CASE
                             WHEN products.image_url = '' AND EXCLUDED.image_url <> '' THEN EXCLUDED.image_url
                             ELSE products.image_url
@@ -515,7 +684,8 @@ def persist_scrape_results(
                     ON CONFLICT (url)
                     DO UPDATE SET
                         name = EXCLUDED.name,
-                        source_url = EXCLUDED.source_url;
+                        source_url = EXCLUDED.source_url,
+                        updated_at = NOW();
                     """,
                     (name, canonical_url, source_url),
                 )

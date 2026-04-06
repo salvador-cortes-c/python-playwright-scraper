@@ -24,6 +24,19 @@ SELECT
     (SELECT COUNT(*) FROM stores WHERE supermarket_id IS NULL) AS stores_missing_supermarket,
     (SELECT COUNT(*) FROM price_snapshots WHERE supermarket_id IS NULL) AS snapshots_missing_supermarket;
 
+-- Suspicious product rows that look like scraped prices instead of names
+SELECT product_key, name, packaging_format, updated_at
+FROM products
+WHERE btrim(name) ~ '^\$?\s*\d+(?:[ .]\d{1,2})?(?:\s*(?:ea|each|kg|g|mg|l|ml|cl))?\s*$'
+ORDER BY updated_at DESC, name ASC;
+
+-- Products still missing packaging or carrying legacy empty-suffix keys
+SELECT product_key, name, packaging_format, updated_at
+FROM products
+WHERE COALESCE(packaging_format, '') = ''
+   OR right(product_key, 2) = '__'
+ORDER BY updated_at DESC, name ASC;
+
 -- Categories with no linked products
 SELECT
     c.id,
