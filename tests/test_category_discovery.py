@@ -453,6 +453,48 @@ class CategoryDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0].price, "24.99")
 
+    def test_scrape_products_from_html_maps_woolworths_member_price_fields_correctly(self):
+        html = '''
+        <div class="product-entry product-cup">
+          <span class="badge">Member Price</span>
+          <a href="/shop/productdetails?stockcode=2&amp;name=asahi-super-dry-beer-alcohol-free">
+            <h3 id="product-2-title">Asahi Super Dry Beer Alcohol Free 0.0% Bottles 6 x 330mL</h3>
+          </a>
+          <div class="product-meta">
+            <span class="cupPrice">$6.92 / 1L</span>
+            <p class="noMemberCupPrice">Non-member $7.32 / 1L</p>
+          </div>
+          <product-price>
+            <h3 id="product-2-price">$ <em>13</em><span>70</span></h3>
+            <p class="previousPrice">Non-member $14.50</p>
+          </product-price>
+        </div>
+        '''
+
+        products, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48",
+            product_selector="div.product-entry",
+            name_selector="h3[id$='-title'], div.product-entry h3",
+            price_selector="h3[id$='-price'] em, product-price h3 em",
+            price_cents_selector="h3[id$='-price'] span, product-price h3 span",
+            unit_price_selector="span.cupPrice, p.price-single-unit-text",
+            promo_price_dollars_selector="",
+            promo_price_cents_selector="",
+            promo_unit_price_selector=".noMemberCupPrice, .previousPrice",
+            image_selector="a.productImage-container img, figure img",
+            limit=5,
+            query=None,
+        )
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(products[0].packaging_format, "6x330mL")
+        self.assertEqual(snapshots[0].promo_price, "13.70")
+        self.assertEqual(snapshots[0].price, "14.50")
+        self.assertEqual(snapshots[0].promo_unit_price, "$6.92 / 1L")
+        self.assertEqual(snapshots[0].unit_price, "$7.32 / 1L")
+
 
 if __name__ == "__main__":
     unittest.main()

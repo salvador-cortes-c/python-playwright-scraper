@@ -738,6 +738,17 @@ _PACKAGING_IN_NAME_RE = re.compile(
     """
 )
 
+_MEMBER_PRICE_BADGE_RE = re.compile(r"\bmember\s+price\b", re.IGNORECASE)
+_NON_MEMBER_PRICE_RE = re.compile(r"non[-\s]*member\s*\$?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
+_NON_MEMBER_UNIT_PRICE_RE = re.compile(
+    r"non[-\s]*member\s*(\$?\s*\d+(?:\.\d{1,2})?\s*/\s*\d+\s*(?:kg|g|mg|l|ml|cl|ea)\b)",
+    re.IGNORECASE,
+)
+_UNIT_PRICE_TEXT_RE = re.compile(
+    r"\$?\s*\d+(?:\.\d{1,2})?\s*/\s*\d+\s*(?:kg|g|mg|l|ml|cl|ea)\b",
+    re.IGNORECASE,
+)
+
 
 def _looks_like_price_only_name(value: str | None) -> bool:
     cleaned = _clean_text(value)
@@ -759,6 +770,30 @@ def _extract_packaging_from_name(name: str | None) -> str:
     packaging = re.sub(r"\s*[x×]\s*", "x", packaging)
     packaging = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", packaging, flags=re.IGNORECASE)
     return packaging.strip()
+
+
+def _extract_unit_price_text(value: str | None) -> str:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    match = _UNIT_PRICE_TEXT_RE.search(cleaned)
+    return _clean_text(match.group(0)) if match else cleaned
+
+
+def _extract_non_member_price_text(value: str | None) -> str:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    matches = _NON_MEMBER_PRICE_RE.findall(cleaned)
+    return matches[-1] if matches else ""
+
+
+def _extract_non_member_unit_price_text(value: str | None) -> str:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    match = _NON_MEMBER_UNIT_PRICE_RE.search(cleaned)
+    return _clean_text(match.group(1)) if match else ""
 
 
 def _product_key(name: str, packaging_format: str) -> str:
@@ -2643,13 +2678,35 @@ def scrape_products_from_html(
         elif promo_dollars_cleaned:
             promo_price = promo_dollars_cleaned
 
+        raw_unit_price = unit_price
+        raw_promo_unit_price = promo_unit_price
+        unit_price = _extract_unit_price_text(unit_price)
+        promo_unit_price = _extract_unit_price_text(promo_unit_price)
+
+        card_text = _clean_text(card.get_text(" ", strip=True))
+        if "woolworths.co.nz" in urlparse(url).netloc.lower() and _MEMBER_PRICE_BADGE_RE.search(card_text):
+            previous_price_el = _safe_select_one(card, ".previousPrice")
+            previous_price_text = _clean_text(previous_price_el.get_text(" ", strip=True) if previous_price_el else "")
+            non_member_price = _extract_non_member_price_text(previous_price_text or card_text)
+            non_member_unit_price = _extract_non_member_unit_price_text(raw_promo_unit_price or card_text)
+            member_unit_price = _extract_unit_price_text(raw_unit_price)
+
+            if price:
+                promo_price = price
+            if non_member_price:
+                price = non_member_price
+            if member_unit_price:
+                promo_unit_price = member_unit_price
+            if non_member_unit_price:
+                unit_price = non_member_unit_price
+
         if not name or _looks_like_price_only_name(name):
             continue
 
         if query_normalized and query_normalized not in name.lower():
             continue
 
-        packaging_format = _extract_packaging_format(unit_price) or _extract_packaging_from_name(name)
+        packaging_format = _extract_packaging_from_name(name) or _extract_packaging_format(unit_price)
         product_key = _product_key(name, packaging_format)
 
         products.append(
