@@ -72,9 +72,6 @@ name: Daily Product Scrape
 jobs:
   scrape:
     name: ${{ matrix.label }}
-    if: >-
-      (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') ||
-      (github.event_name == 'schedule' && matrix.mode == 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -118,10 +115,12 @@ jobs:
     steps:
       # Checkout the code
       - name: Checkout repository
+        if: ${{ (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule') }}
         uses: actions/checkout@v4
       
       # Set up Python
       - name: Set up Python
+        if: ${{ (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule') }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -129,17 +128,19 @@ jobs:
       
       # Install Python dependencies
       - name: Install Python dependencies
+        if: ${{ (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule') }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ github.event.inputs.provider == 'playwright' }}
+        if: ${{ ((github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule')) && (github.event.inputs.provider == 'playwright' || matrix.provider == 'playwright') }}
         run: |
           python -m playwright install firefox
           python -m playwright install-deps firefox
       
       - name: Run scraper
+        if: ${{ (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule') }}
         env:
           SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
@@ -369,7 +370,7 @@ jobs:
           "${CMD[@]}"
 
       - name: Verify scrape produced data
-        if: ${{ github.event_name == 'schedule' || github.event.inputs.count_only != 'true' }}
+        if: ${{ ((github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule')) && (github.event_name == 'schedule' || github.event.inputs.count_only != 'true') }}
         run: |
           if [ ! -f "products.json" ]; then
             echo "❌ ERROR: products.json was not created"
@@ -389,6 +390,7 @@ jobs:
       
       # Upload scraped data as artifact
       - name: Upload scraped data
+        if: ${{ (github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule') }}
         uses: actions/upload-artifact@v4
         with:
           name: scrape-results-${{ matrix.artifact_suffix }}
@@ -401,7 +403,7 @@ jobs:
       
       # Create a summary of what was scraped
       - name: Create scrape summary
-        if: always()
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && matrix.mode == 'manual') || (github.event_name == 'schedule' && matrix.mode == 'schedule')) }}
         run: |
           echo "## Scraping Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
