@@ -1449,20 +1449,36 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
     # Woolworths-specific: Check for totalItemsCount element which is reliable
     if "woolworths.co.nz" in urlparse(start_url).netloc.lower():
         total_items_el = soup.select_one("#totalItemsCount")
+        total_items = None
+        
+        # Try to get total items from the dedicated element
         if total_items_el:
             total_items_text = _clean_text(total_items_el.get_text())
             items_match = re.search(r"(\d+)\s+items", total_items_text, re.IGNORECASE)
             if items_match:
                 total_items = int(items_match.group(1))
-                query_page_size = parse_qs(start_parsed.query).get("size", ["48"])[0]
-                if str(query_page_size).isdigit():
-                    query_page_size = int(query_page_size)
-                    calculated_pages = (total_items + query_page_size - 1) // query_page_size
-                    page_numbers.add(calculated_pages)
-                    # If we found reliable Woolworths pagination, skip other methods
-                    max_page = max(page_numbers)
-                    normalized_start_url = _normalize_category_url(start_url)
-                    return [_with_page_number(normalized_start_url, page_num) for page_num in range(1, max_page + 1)]
+        
+        # Fallback: search for "NNNN items" patterns in page text if element not found
+        if not total_items:
+            page_text = soup.get_text(" ", strip=True)
+            # Look for patterns like "1334 items" near the start of page
+            for match in re.finditer(r"\b(\d{3,5})\s+items?\b", page_text, re.IGNORECASE):
+                potential_total = int(match.group(1))
+                # Only trust "items" count if it's reasonably large (>10) and unique
+                if potential_total > 10:
+                    total_items = potential_total
+                    break
+        
+        if total_items:
+            query_page_size = parse_qs(start_parsed.query).get("size", ["48"])[0]
+            if str(query_page_size).isdigit():
+                query_page_size = int(query_page_size)
+                calculated_pages = (total_items + query_page_size - 1) // query_page_size
+                page_numbers.add(calculated_pages)
+                # If we found reliable Woolworths pagination, skip other methods
+                max_page = max(page_numbers)
+                normalized_start_url = _normalize_category_url(start_url)
+                return [_with_page_number(normalized_start_url, page_num) for page_num in range(1, max_page + 1)]
 
     for anchor in href_elements:
         href = anchor.get("href")
@@ -2339,6 +2355,7 @@ async def scrape_url_playwright(
     page: Any,
     url: str,
     args: argparse.Namespace,
+    supermarket_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     await _playwright_navigate(page, url, args, f"scraping {url}")
     if args.wait_for_selector:
@@ -2358,6 +2375,7 @@ async def scrape_url_playwright(
         image_selector=args.image_selector,
         limit=max(1, int(args.limit)),
         query=args.query,
+        supermarket_name=supermarket_name,
     )
 
 
@@ -2436,8 +2454,9 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 store_indices = None
                 stores = []
 
+            selected_store_name: str | None = None
             if args.choose_store and (not args.scrape_all_stores) and (not store_names_to_scrape):
-                await choose_store_playwright(page, args.url[0], args, args.store_name, args.store_index)
+                selected_store_name = await choose_store_playwright(page, args.url[0], args, args.store_name, args.store_index)
 
             async def resolve_urls() -> list[str]:
                 resolved_urls: list[str] = []
@@ -2542,7 +2561,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 await browser.close()
                 return
 
-            async def scrape_urls_for_current_store(to_scrape: list[str]) -> None:
+            async def scrape_urls_for_current_store(to_scrape: list[str], current_store_name: str | None = None) -> None:
                 nonlocal rate_limit_hit, all_products, all_snapshots
 
                 completed_set = set(progress.completed_urls) if args.resume else set()
@@ -2557,7 +2576,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                     rl_attempt = 0
                     while True:
                         try:
-                            products, snapshots = await scrape_url_playwright(page=page, url=current_url, args=args)
+                            products, snapshots = await scrape_url_playwright(page=page, url=current_url, args=args, supermarket_name=current_store_name)
                             break
                         except RateLimitError as exc:
                             print(f"WARNING: {exc}")
@@ -2601,26 +2620,26 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 if store_indices is not None:
                     for index in store_indices:
                         print(f"\n=== Store index: {index} ===")
-                        await choose_store_playwright(page, args.url[0], args, None, index)
-                        await scrape_urls_for_current_store(resolved_urls)
+                        selected_store_name = await choose_store_playwright(page, args.url[0], args, None, index)
+                        await scrape_urls_for_current_store(resolved_urls, selected_store_name)
                         if rate_limit_hit:
                             break
                 else:
                     for store in stores:
                         print(f"\n=== Store: {store} ===")
-                        await choose_store_playwright(page, args.url[0], args, store, args.store_index)
-                        await scrape_urls_for_current_store(resolved_urls)
+                        selected_store_name = await choose_store_playwright(page, args.url[0], args, store, args.store_index)
+                        await scrape_urls_for_current_store(resolved_urls, selected_store_name)
                         if rate_limit_hit:
                             break
             elif store_names_to_scrape:
                 for store in stores:
                     print(f"\n=== Store: {store} ===")
-                    await choose_store_playwright(page, args.url[0], args, store, args.store_index)
-                    await scrape_urls_for_current_store(resolved_urls)
+                    selected_store_name = await choose_store_playwright(page, args.url[0], args, store, args.store_index)
+                    await scrape_urls_for_current_store(resolved_urls, selected_store_name)
                     if rate_limit_hit:
                         break
             else:
-                await scrape_urls_for_current_store(resolved_urls)
+                await scrape_urls_for_current_store(resolved_urls, selected_store_name)
 
             await context.close()
             await browser.close()
@@ -2679,9 +2698,11 @@ def scrape_products_from_html(
     image_selector: str,
     limit: int,
     query: str | None,
+    supermarket_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     soup = BeautifulSoup(html, "html.parser")
-    supermarket_name = _get_supermarket_name(soup)
+    if not supermarket_name:
+        supermarket_name = _get_supermarket_name(soup)
 
     cards = _select_product_cards(soup, product_selector)
     query_normalized = query.strip().lower() if query else ""
