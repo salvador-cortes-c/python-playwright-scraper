@@ -495,6 +495,43 @@ class CategoryDiscoveryTests(unittest.TestCase):
         self.assertEqual(snapshots[0].promo_unit_price, "$6.92 / 1L")
         self.assertEqual(snapshots[0].unit_price, "$7.32 / 1L")
 
+    def test_scrape_products_from_html_handles_woolworths_non_member_price_correctly(self):
+        html = '''
+        <div class="product-entry product-cup">
+          <a href="/shop/productdetails?stockcode=3&amp;name=steinlager-classic-beer">
+            <h3 id="product-3-title">Steinlager Classic Beer Lager Bottle 24x330mL</h3>
+          </a>
+          <product-price>
+            <h3 id="product-3-price">$ <em>47</em><span> 00 </span></h3>
+          </product-price>
+        </div>
+        '''
+
+        products, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48",
+            product_selector="div.product-entry",
+            name_selector="h3[id$='-title'], div.product-entry h3",
+            price_selector="h3[id$='-price'] em, product-price h3 em",
+            price_cents_selector="h3[id$='-price'] span, product-price h3 span",
+            unit_price_selector="span.cupPrice",
+            promo_price_dollars_selector="",
+            promo_price_cents_selector="",
+            promo_unit_price_selector="",
+            image_selector="a.productImage-container img, figure img",
+            limit=5,
+            query=None,
+        )
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(products[0].name, "Steinlager Classic Beer Lager Bottle 24x330mL")
+        self.assertEqual(products[0].packaging_format, "24x330mL")
+        self.assertEqual(snapshots[0].price, "47.00")
+        self.assertEqual(snapshots[0].promo_price, "")
+        self.assertEqual(snapshots[0].unit_price, "")
+        self.assertEqual(snapshots[0].promo_unit_price, "")
+
 
 if __name__ == "__main__":
     unittest.main()
