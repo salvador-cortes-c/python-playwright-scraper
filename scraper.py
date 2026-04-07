@@ -2108,15 +2108,18 @@ async def choose_store_playwright(
                 
                 # Wait for navigation/page load after selection
                 await page.wait_for_load_state("networkidle", timeout=30000)
-                print(f"Selected store via store finder: {search_term}")
+                print(f"Selected store via store finder: {store_name}")
+                
+                # Return the originally requested store name (not what page shows as fulfillment center)
+                return store_name
             else:
                 raise RuntimeError(f"No store options found for search term '{search_term}' in Woolworths store finder")
         
-        # Return the detected supermarket name from the new page
+        # If no store_name was provided, fallback to auto-detection
         await page.wait_for_timeout(500)
         selected = _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
         if selected:
-            print(f"Store selection confirmed: {selected}")
+            print(f"Store auto-detected: {selected}")
             return selected
         return "Woolworths"
     
