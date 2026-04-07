@@ -1446,6 +1446,24 @@ def discover_category_page_urls_from_html(start_url: str, html: str) -> list[str
     if str(current_page).isdigit():
         page_numbers.add(int(current_page))
 
+    # Woolworths-specific: Check for totalItemsCount element which is reliable
+    if "woolworths.co.nz" in urlparse(start_url).netloc.lower():
+        total_items_el = soup.select_one("#totalItemsCount")
+        if total_items_el:
+            total_items_text = _clean_text(total_items_el.get_text())
+            items_match = re.search(r"(\d+)\s+items", total_items_text, re.IGNORECASE)
+            if items_match:
+                total_items = int(items_match.group(1))
+                query_page_size = parse_qs(start_parsed.query).get("size", ["48"])[0]
+                if str(query_page_size).isdigit():
+                    query_page_size = int(query_page_size)
+                    calculated_pages = (total_items + query_page_size - 1) // query_page_size
+                    page_numbers.add(calculated_pages)
+                    # If we found reliable Woolworths pagination, skip other methods
+                    max_page = max(page_numbers)
+                    normalized_start_url = _normalize_category_url(start_url)
+                    return [_with_page_number(normalized_start_url, page_num) for page_num in range(1, max_page + 1)]
+
     for anchor in href_elements:
         href = anchor.get("href")
         if not href:
@@ -2684,7 +2702,9 @@ def scrape_products_from_html(
         promo_unit_price = _extract_unit_price_text(promo_unit_price)
 
         card_text = _clean_text(card.get_text(" ", strip=True))
-        if "woolworths.co.nz" in urlparse(url).netloc.lower() and _MEMBER_PRICE_BADGE_RE.search(card_text):
+        is_woolworths_member_price = "woolworths.co.nz" in urlparse(url).netloc.lower() and _MEMBER_PRICE_BADGE_RE.search(card_text)
+        
+        if is_woolworths_member_price:
             previous_price_el = _safe_select_one(card, ".previousPrice")
             previous_price_text = _clean_text(previous_price_el.get_text(" ", strip=True) if previous_price_el else "")
             non_member_price = _extract_non_member_price_text(previous_price_text or card_text)
@@ -2699,6 +2719,11 @@ def scrape_products_from_html(
                 promo_unit_price = member_unit_price
             if non_member_unit_price:
                 unit_price = non_member_unit_price
+        elif "woolworths.co.nz" in urlparse(url).netloc.lower():
+            # For Woolworths non-member products (no badge), clear promo fields to avoid
+            # incorrect global selector matches from other cards being assigned
+            promo_price = ""
+            promo_unit_price = ""
 
         if not name or _looks_like_price_only_name(name):
             continue

@@ -359,6 +359,28 @@ class CategoryDiscoveryTests(unittest.TestCase):
             "https://www.woolworths.co.nz/shop/browse/fruit-veg?search=&page=8&size=48&sort=BrowseRelevance",
         )
 
+    def test_discover_category_page_urls_uses_woolworths_totalItemsCount_specifically(self):
+        html = '''
+        <div id="totalItemsCount">1334 items</div>
+        <nav>Pagination: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28</nav>
+        '''
+
+        pages = discover_category_page_urls_from_html(
+            start_url="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48",
+            html=html,
+        )
+
+        # With 1334 items and size=48, should be 28 pages (not 205)
+        self.assertEqual(len(pages), 28)
+        self.assertEqual(
+            pages[0],
+            "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48",
+        )
+        self.assertEqual(
+            pages[-1],
+            "https://www.woolworths.co.nz/shop/browse/beer-wine?page=28&size=48",
+        )
+
     def test_scrape_products_from_html_supports_woolworths_markup(self):
         html = '''
         <cdx-card>
