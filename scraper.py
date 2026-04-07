@@ -2073,6 +2073,54 @@ async def choose_store_playwright(
     store_name: str | None,
     store_index: int,
 ) -> str:
+    # Woolworths-specific: Use store finder page for store selection
+    if "woolworths.co.nz" in urlparse(start_url).netloc.lower():
+        await page.goto("https://www.woolworths.co.nz/store-finder", wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_load_state("networkidle")
+        
+        if store_name:
+            # Normalize store name - remove "Woolworths" prefix if present
+            search_term = re.sub(r"^woolworths\s+", "", store_name, flags=re.IGNORECASE).strip()
+            
+            # Find and click the search input
+            search_input = page.locator("input[placeholder*='Address'], input[placeholder*='suburb'], input[placeholder*='town']").first
+            await search_input.click(timeout=10000)
+            await page.wait_for_timeout(200)
+            
+            # Type the search term
+            await search_input.fill(search_term, timeout=5000)
+            await page.wait_for_timeout(500)
+            
+            # Wait for results/options to appear
+            try:
+                await page.locator("[role='option'], li[class*='item'], div[class*='result']").first.wait_for(timeout=10000)
+            except Exception:
+                # If no specific selector, wait a bit for results to load
+                await page.wait_for_timeout(1000)
+            
+            # Get all available options and click the last one
+            options = page.locator("[role='option'], li[class*='item'], a[class*='store'], div[class*='store-result']")
+            option_count = await options.count()
+            
+            if option_count > 0:
+                # Click the last item in the list
+                await options.nth(option_count - 1).click(timeout=30000)
+                
+                # Wait for navigation/page load after selection
+                await page.wait_for_load_state("networkidle", timeout=30000)
+                print(f"Selected store via store finder: {search_term}")
+            else:
+                raise RuntimeError(f"No store options found for search term '{search_term}' in Woolworths store finder")
+        
+        # Return the detected supermarket name from the new page
+        await page.wait_for_timeout(500)
+        selected = _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
+        if selected:
+            print(f"Store selection confirmed: {selected}")
+            return selected
+        return "Woolworths"
+    
+    # Generic store selection for other retailers (New World, Pak'nSave, etc.)
     await _playwright_navigate(page, start_url, args, "choosing store")
 
     try:
