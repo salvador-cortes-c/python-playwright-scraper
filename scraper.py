@@ -561,6 +561,7 @@ class ProductPriceSnapshot:
     scraped_at: str
     promo_price: str = ""
     promo_unit_price: str = ""
+    store_name: str = ""
 
 
 @dataclass
@@ -635,6 +636,32 @@ def print_category_page_counts(category_page_counts: list[CategoryPageCount]) ->
     print(f"Total category pages across all categories: {total_pages}")
 
 
+def _redact_database_url(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    if not parsed.scheme or not parsed.hostname:
+        return "<invalid-database-url>"
+
+    port_segment = f":{parsed.port}" if parsed.port else ""
+    path = parsed.path or ""
+    return f"{parsed.scheme}://{parsed.hostname}{port_segment}{path}"
+
+
+def _is_neon_reader_endpoint(database_url: str) -> bool:
+    parsed = urlparse(database_url)
+    hostname = (parsed.hostname or "").lower()
+    if "neon.tech" not in hostname:
+        return False
+    return any(token in hostname for token in ["reader", "replica", "readonly", "read-only"])
+
+
+def _maybe_warn_neon_endpoint(database_url: str) -> None:
+    if not _is_neon_reader_endpoint(database_url):
+        return
+
+    print("WARNING: The configured Neon endpoint looks like a read-only/replica endpoint.")
+    print("  Neon read replicas can lag behind recent writes. Use the writer endpoint for scraper persistence.")
+
+
 def maybe_persist_to_database(
     args: argparse.Namespace,
     *,
@@ -651,6 +678,10 @@ def maybe_persist_to_database(
     database_url = resolve_database_url(args.database_url)
     if not database_url:
         raise SystemExit("--persist-db requires --database-url or DATABASE_URL environment variable.")
+
+    target_summary = _redact_database_url(database_url)
+    print(f"Persisting to DB at: {target_summary}")
+    _maybe_warn_neon_endpoint(database_url)
 
     stats = persist_scrape_results(
         database_url=database_url,
@@ -777,7 +808,7 @@ def _extract_unit_price_text(value: str | None) -> str:
     if not cleaned:
         return ""
     match = _UNIT_PRICE_TEXT_RE.search(cleaned)
-    return _clean_text(match.group(0)) if match else cleaned
+    return _clean_text(match.group(0)) if match else ""
 
 
 def _extract_non_member_price_text(value: str | None) -> str:
@@ -914,6 +945,17 @@ def _get_supermarket_name(soup: BeautifulSoup) -> str:
         if match:
             return _clean_text(match.group(1))
 
+    return ""
+
+
+def _infer_generic_store_name_from_url(url: str | None) -> str:
+    host = urlparse(str(url or "")).netloc.lower()
+    if "woolworths.co.nz" in host or "countdown.co.nz" in host:
+        return "Woolworths"
+    if "paknsave.co.nz" in host:
+        return "Pak'nSave"
+    if "newworld.co.nz" in host:
+        return "New World"
     return ""
 
 
@@ -2089,49 +2131,53 @@ async def choose_store_playwright(
     store_name: str | None,
     store_index: int,
 ) -> str:
-    # Woolworths-specific: Use store finder page for store selection
+    # Woolworths-specific: Use the book-a-time delivery address flow for store selection
     if "woolworths.co.nz" in urlparse(start_url).netloc.lower():
+        await page.goto("https://www.woolworths.co.nz/bookatimeslot", wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_load_state("networkidle")
+
+        if store_name:
+            search_term = re.sub(
+                r"^(?:woolworths\s+)|(?:\s+woolworths$)|(?:\s+store$)",
+                "",
+                store_name,
+                flags=re.IGNORECASE,
+            ).strip()
+            if not search_term:
+                raise RuntimeError("Store name is empty after normalization")
+
+            # Open the delivery address picker
+            address_button = page.locator(r"text=/Change\s+Address/i").first
+            await address_button.click(timeout=15000)
+            await page.wait_for_selector("text=/Choose a delivery address/i", timeout=15000)
+
+            # Fill the search box in the address modal using keyboard events to trigger autocomplete
+            search_input = page.locator(
+                "input[data-cy='suburb'], input[placeholder*='Start typing your suburb'], input[placeholder*='Start typing your town']"
+            ).first
+            await search_input.wait_for(timeout=15000)
+            await search_input.click(timeout=10000, force=True)
+            await page.keyboard.type(search_term, delay=100)
+            await page.wait_for_timeout(2000)
+
+            # Select the first autocomplete suggestion
+            results = page.locator(
+                "li[role='option'], div[role='option'], .address-result, .search-result, .search-item, [data-testid*='result']"
+            )
+            await results.first.wait_for(timeout=15000)
+            await results.first.click(timeout=30000, force=True)
+
+            # Save the selected address and continue shopping
+            save_button = page.locator("text=/Save and Continue Shopping/i").first
+            await save_button.click(timeout=15000, force=True)
+            await page.wait_for_load_state("networkidle", timeout=30000)
+            print(f"Selected store via Woolworths bookatimeslot flow: {store_name}")
+            return store_name
+
+        # If no store_name provided, fallback to the generic store-finder flow
+        print("Woolworths store selection: no store_name provided, falling back to generic store-finder flow")
         await page.goto("https://www.woolworths.co.nz/store-finder", wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_load_state("networkidle")
-        
-        if store_name:
-            # Normalize store name - remove "Woolworths" prefix if present
-            search_term = re.sub(r"^woolworths\s+", "", store_name, flags=re.IGNORECASE).strip()
-            
-            # Find and click the search input
-            search_input = page.locator("input[placeholder*='Address'], input[placeholder*='suburb'], input[placeholder*='town']").first
-            await search_input.click(timeout=10000)
-            await page.wait_for_timeout(200)
-            
-            # Type the search term
-            await search_input.fill(search_term, timeout=5000)
-            await page.wait_for_timeout(500)
-            
-            # Wait for results/options to appear
-            try:
-                await page.locator("[role='option'], li[class*='item'], div[class*='result']").first.wait_for(timeout=10000)
-            except Exception:
-                # If no specific selector, wait a bit for results to load
-                await page.wait_for_timeout(1000)
-            
-            # Get all available options and click the last one
-            options = page.locator("[role='option'], li[class*='item'], a[class*='store'], div[class*='store-result']")
-            option_count = await options.count()
-            
-            if option_count > 0:
-                # Click the last item in the list
-                await options.nth(option_count - 1).click(timeout=30000)
-                
-                # Wait for navigation/page load after selection
-                await page.wait_for_load_state("networkidle", timeout=30000)
-                print(f"Selected store via store finder: {store_name}")
-                
-                # Return the originally requested store name (not what page shows as fulfillment center)
-                return store_name
-            else:
-                raise RuntimeError(f"No store options found for search term '{search_term}' in Woolworths store finder")
-        
-        # If no store_name was provided, fallback to auto-detection
         await page.wait_for_timeout(500)
         selected = _get_supermarket_name(BeautifulSoup(await page.content(), "html.parser"))
         if selected:
@@ -2347,6 +2393,16 @@ async def discover_category_page_urls_playwright(
             await page.wait_for_timeout(1000)
         except Exception:
             pass
+    
+    # For Woolworths, wait for pagination content to load
+    if "woolworths.co.nz" in urlparse(start_url).netloc.lower():
+        try:
+            # Wait for either the total items count element or pagination links
+            await page.wait_for_selector("#totalItemsCount, .pagination, [data-testid*='pagination']", timeout=10000)
+            await page.wait_for_timeout(2000)  # Extra time for JS to populate content
+        except Exception:
+            pass
+    
     html = await page.content()
     return discover_category_page_urls_from_html(start_url=start_url, html=html)
 
@@ -2356,6 +2412,7 @@ async def scrape_url_playwright(
     url: str,
     args: argparse.Namespace,
     supermarket_name: str | None = None,
+    store_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     await _playwright_navigate(page, url, args, f"scraping {url}")
     if args.wait_for_selector:
@@ -2376,6 +2433,7 @@ async def scrape_url_playwright(
         limit=max(1, int(args.limit)),
         query=args.query,
         supermarket_name=supermarket_name,
+        store_name=store_name,
     )
 
 
@@ -2576,7 +2634,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                     rl_attempt = 0
                     while True:
                         try:
-                            products, snapshots = await scrape_url_playwright(page=page, url=current_url, args=args, supermarket_name=current_store_name)
+                            products, snapshots = await scrape_url_playwright(
+                                page=page,
+                                url=current_url,
+                                args=args,
+                                supermarket_name=current_store_name,
+                                store_name=current_store_name,
+                            )
                             break
                         except RateLimitError as exc:
                             print(f"WARNING: {exc}")
@@ -2608,6 +2672,17 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             )
                         else:
                             write_price_snapshots(price_output_path, all_snapshots)
+
+                        if args.persist_db:
+                            maybe_persist_to_database(
+                                args,
+                                provider="playwright",
+                                mode="scrape",
+                                started_at=run_started_at,
+                                products=products,
+                                snapshots=snapshots,
+                                categories=discovered_categories_all,
+                            )
 
                     await context.storage_state(path=str(storage_state_path))
 
@@ -2699,10 +2774,13 @@ def scrape_products_from_html(
     limit: int,
     query: str | None,
     supermarket_name: str | None = None,
+    store_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     soup = BeautifulSoup(html, "html.parser")
     if not supermarket_name:
         supermarket_name = _get_supermarket_name(soup)
+    if store_name is None:
+        store_name = supermarket_name or _infer_generic_store_name_from_url(url) or ""
 
     cards = _select_product_cards(soup, product_selector)
     query_normalized = query.strip().lower() if query else ""
@@ -2817,13 +2895,14 @@ def scrape_products_from_html(
         snapshots.append(
             ProductPriceSnapshot(
                 product_key=product_key,
-                supermarket_name=supermarket_name,
+                supermarket_name=supermarket_name or "",
                 price=price,
                 unit_price=unit_price,
                 source_url=url,
                 scraped_at=page_scraped_at,
                 promo_price=promo_price,
                 promo_unit_price=promo_unit_price or "",
+                store_name=store_name or "",
             )
         )
 
@@ -3198,7 +3277,7 @@ async def main() -> None:
     parser.add_argument(
         "--database-url",
         default=None,
-        help="PostgreSQL connection string. Falls back to DATABASE_URL env var.",
+        help="PostgreSQL connection string. Falls back to DATABASE_URL env var. For Neon, use the writer endpoint, not a reader/replica URL.",
     )
     parser.add_argument(
         "--scrapingbee-wait-ms",
@@ -3521,6 +3600,17 @@ async def main() -> None:
                     )
                 else:
                     write_price_snapshots(price_output_path, all_snapshots)
+
+                if args.persist_db:
+                    maybe_persist_to_database(
+                        args,
+                        provider=provider,
+                        mode="scrape",
+                        started_at=run_started_at,
+                        products=products,
+                        snapshots=snapshots,
+                        categories=discovered_categories_all,
+                    )
 
             if args.delay_seconds > 0:
                 jitter = max(0.0, float(args.delay_jitter_seconds))

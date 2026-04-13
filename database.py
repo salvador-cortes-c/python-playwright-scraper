@@ -134,6 +134,13 @@ def _infer_supermarket_name(store_name: str | None = None, source_url: str | Non
     return ""
 
 
+def _snapshot_store_name(snapshot: object) -> str:
+    store_name = str(getattr(snapshot, "store_name", "") or getattr(snapshot, "supermarket_name", "")).strip()
+    if not store_name:
+        store_name = _infer_supermarket_name(source_url=getattr(snapshot, "source_url", ""))
+    return store_name
+
+
 def _is_category_like_path(path: str | None) -> bool:
     normalized_path = str(path or "").rstrip("/") or str(path or "")
     return any(normalized_path.startswith(prefix) for prefix in _CATEGORY_PATH_PREFIXES)
@@ -277,7 +284,7 @@ def dedupe_price_snapshots(snapshots: Iterable) -> list:
     for snapshot in snapshots:
         current_key = (
             str(getattr(snapshot, "product_key", "")).strip().lower(),
-            str(getattr(snapshot, "supermarket_name", "")).strip().lower(),
+            str(_snapshot_store_name(snapshot)).strip().lower(),
             _canonical_snapshot_source_url(getattr(snapshot, "source_url", "")),
             str(getattr(snapshot, "price", "") or "").strip(),
             str(getattr(snapshot, "unit_price", "") or "").strip(),
@@ -477,7 +484,35 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
         )
 
     _backfill_supermarket_refs(conn)
+    _backfill_store_refs(conn)
     _repair_product_catalog(conn)
+
+
+def _backfill_store_refs(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO stores (name, supermarket_id)
+            SELECT sm.name, sm.id
+            FROM supermarkets sm
+            WHERE NOT EXISTS (
+                SELECT 1 FROM stores s
+                WHERE s.supermarket_id = sm.id
+                  AND s.name = sm.name
+            );
+            """
+        )
+        cur.execute(
+            """
+            UPDATE price_snapshots ps
+            SET store_id = s.id
+            FROM stores s, supermarkets sm
+            WHERE ps.store_id IS NULL
+              AND ps.supermarket_id = s.supermarket_id
+              AND sm.id = ps.supermarket_id
+              AND s.name = sm.name;
+            """
+        )
 
 
 def _repair_product_catalog(conn: psycopg.Connection) -> None:
@@ -623,8 +658,9 @@ def persist_scrape_results(
                 supermarket_name_to_id[str(supermarket_name)] = int(supermarket_id)
 
             for snapshot in snapshots:
+                store_name = (getattr(snapshot, "store_name", "") or getattr(snapshot, "supermarket_name", "")).strip()
                 supermarket_name = _infer_supermarket_name(
-                    store_name=getattr(snapshot, "supermarket_name", ""),
+                    store_name=store_name,
                     source_url=getattr(snapshot, "source_url", ""),
                 )
                 if not supermarket_name or supermarket_name in supermarket_name_to_id:
@@ -694,7 +730,7 @@ def persist_scrape_results(
         store_name_to_id: dict[str, int] = {}
         with conn.cursor() as cur:
             for snapshot in snapshots:
-                store_name = (snapshot.supermarket_name or "").strip()
+                store_name = _snapshot_store_name(snapshot)
                 if not store_name or store_name in store_name_to_id:
                     continue
                 supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=snapshot.source_url)
@@ -734,7 +770,7 @@ def persist_scrape_results(
             )
 
             for snapshot in snapshots:
-                store_name = (snapshot.supermarket_name or "").strip()
+                store_name = _snapshot_store_name(snapshot)
                 store_id = store_name_to_id.get(store_name)
                 supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=snapshot.source_url)
                 supermarket_id = supermarket_name_to_id.get(supermarket_name)

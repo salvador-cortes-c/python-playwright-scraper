@@ -10,6 +10,7 @@ from database import (
     _find_category_id_for_source_url,
     _infer_supermarket_name,
     _normalize_product_record,
+    _snapshot_store_name,
     dedupe_price_snapshots,
 )
 
@@ -41,6 +42,38 @@ class DatabasePersistenceTests(unittest.TestCase):
             _infer_supermarket_name(source_url="https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1"),
             "Woolworths",
         )
+
+    def test_snapshot_store_name_uses_store_name_when_present(self):
+        class Snapshot:
+            store_name = "Karori Woolworths"
+            supermarket_name = "Woolworths"
+            source_url = ""
+
+        self.assertEqual(_snapshot_store_name(Snapshot()), "Karori Woolworths")
+
+    def test_snapshot_store_name_falls_back_to_supermarket_name(self):
+        class Snapshot:
+            store_name = ""
+            supermarket_name = "Pak'nSave"
+            source_url = ""
+
+        self.assertEqual(_snapshot_store_name(Snapshot()), "Pak'nSave")
+
+    def test_snapshot_store_name_falls_back_to_inferred_supermarket_from_url(self):
+        class Snapshot:
+            store_name = ""
+            supermarket_name = ""
+            source_url = "https://www.newworld.co.nz/shop/category/pantry?pg=1"
+
+        self.assertEqual(_snapshot_store_name(Snapshot()), "New World")
+
+    def test_extract_unit_price_text_only_returns_unit_price(self):
+        from scraper import _extract_unit_price_text
+
+        self.assertEqual(_extract_unit_price_text("Non-member $23.00"), "")
+        self.assertEqual(_extract_unit_price_text("$6.92 / 1L"), "$6.92 / 1L")
+        self.assertEqual(_extract_unit_price_text("Unit price $6.92 / 1L each"), "$6.92 / 1L")
+        self.assertEqual(_extract_unit_price_text("$6.92 / 1L per"), "$6.92 / 1L")
 
     def test_dedupe_price_snapshots_collapses_duplicates_from_same_category_run(self):
         class Snapshot:
@@ -94,6 +127,28 @@ class DatabasePersistenceTests(unittest.TestCase):
         deduped = dedupe_price_snapshots(snapshots)
 
         self.assertEqual(len(deduped), 3)
+
+    def test_dedupe_price_snapshots_keeps_distinct_store_names(self):
+        class Snapshot:
+            def __init__(self, product_key, store_name):
+                self.product_key = product_key
+                self.supermarket_name = "New World"
+                self.store_name = store_name
+                self.source_url = 'https://www.newworld.co.nz/shop/category/pantry?pg=1'
+                self.scraped_at = '2026-04-04T06:00:00+00:00'
+                self.price = '4.99'
+                self.unit_price = '$4.99/kg'
+                self.promo_price = ''
+                self.promo_unit_price = ''
+
+        snapshots = [
+            Snapshot('abc__1kg', 'New World Karori'),
+            Snapshot('abc__1kg', 'New World Metro'),
+        ]
+
+        deduped = dedupe_price_snapshots(snapshots)
+
+        self.assertEqual(len(deduped), 2)
 
     def test_collect_category_rows_can_infer_category_from_snapshot_url(self):
         class Snapshot:
