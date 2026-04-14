@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper import choose_store_playwright
+from scraper import _is_playwright_page_crash_error, choose_store_playwright
 
 
 class FakeLocator:
@@ -17,8 +17,8 @@ class FakeLocator:
     def first(self) -> "FakeLocator":
         return self
 
-    async def click(self, timeout: int | None = None) -> None:
-        self.page.calls.append(("click", self.selector, timeout))
+    async def click(self, timeout: int | None = None, force: bool = False) -> None:
+        self.page.calls.append(("click", self.selector, timeout, force))
 
     async def fill(self, text: str, timeout: int | None = None) -> None:
         self.page.calls.append(("fill", self.selector, text, timeout))
@@ -55,6 +55,21 @@ class FakePage:
         self.calls.append(("content",))
         return "<html></html>"
 
+    @property
+    def keyboard(self) -> "FakeKeyboard":
+        return FakeKeyboard(self)
+
+
+class FakeKeyboard:
+    def __init__(self, page: FakePage) -> None:
+        self.page = page
+
+    async def type(self, text: str, delay: int | None = None) -> None:
+        self.page.calls.append(("keyboard.type", text, delay))
+
+    async def press(self, key: str) -> None:
+        self.page.calls.append(("keyboard.press", key))
+
 
 class StoreSelectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_choose_store_playwright_uses_woolworths_bookatimeslot_flow(self) -> None:
@@ -74,7 +89,7 @@ class StoreSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("goto", "https://www.woolworths.co.nz/bookatimeslot", "domcontentloaded", 60000), page.calls)
         self.assertIn(("locator", r"text=/Change\s+Address/i"), page.calls)
         self.assertIn(("wait_for_selector", r"text=/Choose a delivery address/i", 15000), page.calls)
-        self.assertIn(("fill", "input[type='search'], input[placeholder*='Search'], input[placeholder*='Address'], input[placeholder*='Suburb'], input[aria-label*='search']", "Karori Woolworths", 5000), page.calls)
+        self.assertIn(("keyboard.type", "Karori", 100), page.calls)
         self.assertIn(("locator", r"text=/Save and Continue Shopping/i"), page.calls)
 
     async def test_choose_store_playwright_falls_back_to_store_finder_when_no_store_name(self) -> None:
@@ -93,6 +108,11 @@ class StoreSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selected_store, "Woolworths")
         self.assertIn(("goto", "https://www.woolworths.co.nz/bookatimeslot", "domcontentloaded", 60000), page.calls)
         self.assertIn(("goto", "https://www.woolworths.co.nz/store-finder", "domcontentloaded", 60000), page.calls)
+
+    def test_is_playwright_page_crash_error_matches_page_crashed(self) -> None:
+        self.assertTrue(_is_playwright_page_crash_error(Exception("Page.goto: Page crashed")))
+        self.assertTrue(_is_playwright_page_crash_error(Exception("Target page, context or browser has been closed")))
+        self.assertFalse(_is_playwright_page_crash_error(Exception("Timeout expired")))
 
 
 if __name__ == "__main__":

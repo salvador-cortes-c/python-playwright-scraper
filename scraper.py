@@ -2007,6 +2007,19 @@ def _ensure_playwright_available() -> None:
     )
 
 
+def _is_playwright_page_crash_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "page crashed",
+            "page is closed",
+            "target page, context or browser has been closed",
+            "cannot find context",
+        )
+    )
+
+
 def _normalize_store_names(raw_values: list[str] | None) -> list[str]:
     normalized: list[str] = []
     if not raw_values:
@@ -2620,7 +2633,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 return
 
             async def scrape_urls_for_current_store(to_scrape: list[str], current_store_name: str | None = None) -> None:
-                nonlocal rate_limit_hit, all_products, all_snapshots
+                nonlocal rate_limit_hit, all_products, all_snapshots, page
 
                 completed_set = set(progress.completed_urls) if args.resume else set()
                 targets = [current for current in to_scrape if current not in completed_set]
@@ -2632,6 +2645,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 for current_url in targets:
                     print(f"Scraping URL: {current_url}")
                     rl_attempt = 0
+                    page_crash_attempt = 0
                     while True:
                         try:
                             products, snapshots = await scrape_url_playwright(
@@ -2652,6 +2666,25 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             wait_seconds = max(0, int(args.rate_limit_wait_seconds))
                             print(f"Waiting {wait_seconds}s then retrying ({rl_attempt}/{args.max_rate_limit_retries})...")
                             await page.wait_for_timeout(wait_seconds * 1000)
+                        except Exception as exc:
+                            if _is_playwright_page_crash_error(exc):
+                                if page_crash_attempt >= max(0, int(args.max_page_retries)):
+                                    raise
+                                page_crash_attempt += 1
+                                print(
+                                    f"WARNING: Playwright page crashed while scraping {current_url}. "
+                                    f"Re-opening a fresh page and retrying ({page_crash_attempt}/{args.max_page_retries})..."
+                                )
+                                try:
+                                    if not page.is_closed():
+                                        await page.close()
+                                except Exception:
+                                    pass
+                                page = await context.new_page()
+                                await Stealth().apply_stealth_async(page)
+                                await page.wait_for_timeout(1000)
+                                continue
+                            raise
 
                     if rate_limit_hit:
                         break
@@ -3262,6 +3295,12 @@ async def main() -> None:
         type=int,
         default=0,
         help="How many times to wait and retry when Cloudflare 1015/429 is hit",
+    )
+    parser.add_argument(
+        "--max-page-retries",
+        type=int,
+        default=1,
+        help="How many times to retry a Playwright page navigation if the page crashes",
     )
     parser.add_argument(
         "--rate-limit-wait-seconds",
