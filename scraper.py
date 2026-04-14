@@ -2747,34 +2747,104 @@ def scrape_products_from_html(
         elif promo_dollars_cleaned:
             promo_price = promo_dollars_cleaned
 
-        raw_unit_price = unit_price
-        raw_promo_unit_price = promo_unit_price
         unit_price = _extract_unit_price_text(unit_price)
         promo_unit_price = _extract_unit_price_text(promo_unit_price)
 
-        card_text = _clean_text(card.get_text(" ", strip=True))
-        is_woolworths_member_price = "woolworths.co.nz" in urlparse(url).netloc.lower() and _MEMBER_PRICE_BADGE_RE.search(card_text)
-        
-        if is_woolworths_member_price:
-            previous_price_el = _safe_select_one(card, ".previousPrice")
-            previous_price_text = _clean_text(previous_price_el.get_text(" ", strip=True) if previous_price_el else "")
-            non_member_price = _extract_non_member_price_text(previous_price_text or card_text)
-            non_member_unit_price = _extract_non_member_unit_price_text(raw_promo_unit_price or card_text)
-            member_unit_price = _extract_unit_price_text(raw_unit_price)
+        if "woolworths.co.nz" in urlparse(url).netloc.lower():
+            # Determine member vs non-member price via productStrap-title badge
+            strap_title_el = _safe_select_one(card, "div .productStrap-title")
+            strap_title_text = _clean_text(strap_title_el.get_text(" ", strip=True) if strap_title_el else "")
+            is_member_price = bool(re.search(r"\bmember\s+price\b", strap_title_text, re.IGNORECASE))
 
-            if price:
-                promo_price = price
-            if non_member_price:
-                price = non_member_price
-            if member_unit_price:
-                promo_unit_price = member_unit_price
-            if non_member_unit_price:
-                unit_price = non_member_unit_price
-        elif "woolworths.co.nz" in urlparse(url).netloc.lower():
-            # For Woolworths non-member products (no badge), clear promo fields to avoid
-            # incorrect global selector matches from other cards being assigned
-            promo_price = ""
-            promo_unit_price = ""
+            if is_member_price:
+                # price_cents: price extracted from .noMemberCupPrice.ng-star-inserted (mandatory)
+                no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice.ng-star-inserted")
+                no_member_cup_text = _clean_text(no_member_cup_el.get_text(" ", strip=True) if no_member_cup_el else "")
+                if not no_member_cup_text:
+                    print(f"ERROR: [member-price] .noMemberCupPrice.ng-star-inserted is empty for '{name}' at {url}", flush=True)
+                price_re_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", no_member_cup_text)
+                if price_re_match:
+                    price = price_re_match.group(1)
+                else:
+                    if no_member_cup_text:
+                        print(f"ERROR: [member-price] could not extract price from '{no_member_cup_text}' for '{name}' at {url}", flush=True)
+                    price = ""
+
+                # promo_price_cents: member price from .heading--2.presentPrice.priceCupAdjustment em+span (mandatory)
+                present_price_el = _safe_select_one(card, ".heading--2.presentPrice.priceCupAdjustment")
+                if not present_price_el:
+                    print(f"ERROR: [member-price] .heading--2.presentPrice.priceCupAdjustment not found for '{name}' at {url}", flush=True)
+                    promo_price = ""
+                else:
+                    em_el = present_price_el.find("em")
+                    span_el = present_price_el.find("span")
+                    em_text = _clean_text(em_el.get_text(" ", strip=True)) if em_el else ""
+                    span_text = _clean_text(span_el.get_text(" ", strip=True)) if span_el else ""
+                    if span_text and re.search(r"\b(kg|g|mg|l|ml|cl)\b", span_text, re.IGNORECASE):
+                        span_text = ""
+                    promo_d, promo_c = _extract_price_parts(em_text, span_text)
+                    if promo_d and promo_c:
+                        promo_price = f"{promo_d}.{promo_c.zfill(2)}"
+                    elif promo_d:
+                        promo_price = promo_d
+                    else:
+                        print(f"ERROR: [member-price] .heading--2.presentPrice.priceCupAdjustment is empty for '{name}' at {url}", flush=True)
+                        promo_price = ""
+
+                # Fallback: if mandatory non-member price is missing, keep logging the error
+                # but persist presentPrice so price_cents is not NULL.
+                if not price and promo_price:
+                    print(
+                        f"WARNING: [member-price] using presentPrice fallback for price_cents for '{name}' at {url}",
+                        flush=True,
+                    )
+                    price = promo_price
+                    promo_price = ""
+
+                # unit_price_text: full text from .noMemberCupPrice.ng-star-inserted (non-mandatory)
+                unit_price = no_member_cup_text
+                if not unit_price:
+                    print(f"WARNING: [member-price] .noMemberCupPrice.ng-star-inserted is empty (unit_price_text) for '{name}' at {url}", flush=True)
+
+                # promo_unit_price_text: text from .cupPrice.ng-star-inserted (non-mandatory)
+                cup_price_el = _safe_select_one(card, ".cupPrice.ng-star-inserted")
+                promo_unit_price = _clean_text(cup_price_el.get_text(" ", strip=True) if cup_price_el else "")
+                if not promo_unit_price:
+                    print(f"WARNING: [member-price] .cupPrice.ng-star-inserted is empty (promo_unit_price_text) for '{name}' at {url}", flush=True)
+
+            else:
+                # price_cents: price from .heading--2.presentPrice.priceCupAdjustment em+span (mandatory)
+                present_price_el = _safe_select_one(card, ".heading--2.presentPrice.priceCupAdjustment")
+                if not present_price_el:
+                    print(f"ERROR: [non-member] .heading--2.presentPrice.priceCupAdjustment not found for '{name}' at {url}", flush=True)
+                    price = ""
+                else:
+                    em_el = present_price_el.find("em")
+                    span_el = present_price_el.find("span")
+                    em_text = _clean_text(em_el.get_text(" ", strip=True)) if em_el else ""
+                    span_text = _clean_text(span_el.get_text(" ", strip=True)) if span_el else ""
+                    if span_text and re.search(r"\b(kg|g|mg|l|ml|cl)\b", span_text, re.IGNORECASE):
+                        span_text = ""
+                    reg_d, reg_c = _extract_price_parts(em_text, span_text)
+                    if reg_d and reg_c:
+                        price = f"{reg_d}.{reg_c.zfill(2)}"
+                    elif reg_d:
+                        price = reg_d
+                    else:
+                        print(f"ERROR: [non-member] .heading--2.presentPrice.priceCupAdjustment is empty for '{name}' at {url}", flush=True)
+                        price = ""
+
+                # promo_price_cents: empty for non-member products
+                promo_price = ""
+
+                # unit_price_text: text from .cupPrice.ng-star-inserted (non-mandatory)
+                cup_price_el = _safe_select_one(card, ".cupPrice.ng-star-inserted")
+                unit_price = _clean_text(cup_price_el.get_text(" ", strip=True) if cup_price_el else "")
+                if not unit_price:
+                    print(f"WARNING: [non-member] .cupPrice.ng-star-inserted is empty (unit_price_text) for '{name}' at {url}", flush=True)
+
+                # promo_unit_price_text: empty for non-member products
+                promo_unit_price = ""
 
         if not name or _looks_like_price_only_name(name):
             continue
