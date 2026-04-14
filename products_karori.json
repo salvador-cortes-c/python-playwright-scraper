@@ -1,0 +1,578 @@
+[
+  {
+    "product_key": "squealing pig rose bottle 750ml__750ml",
+    "name": "squealing pig rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/462559.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "19 crimes chardonnay hard 750ml__750ml",
+    "name": "19 crimes chardonnay hard 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/806736.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken silver beer low carb lager can 12 x 330ml__12x330ml",
+    "name": "heineken silver beer low carb lager Can 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/938977.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "squealing pig prosecco non vintage bottle 750ml__750ml",
+    "name": "squealing pig prosecco non vintage Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/312053.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "corona extra beer lager bottles 24pack 330ml__330ml",
+    "name": "corona extra beer lager Bottles 24pack 330mL",
+    "packaging_format": "330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6033979.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit beer lager ultra low carb bottle 24x330ml__24x330ml",
+    "name": "speight's summit beer lager ultra low carb Bottle 24x330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/705958.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "corona beer lager alcohol free 0.0%* bottle 12x330ml__12x330ml",
+    "name": "corona beer lager alcohol free 0.0%* Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6018678.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit beer lager ultra low carb bottle 12x330ml__12x330ml",
+    "name": "speight's summit beer lager ultra low carb Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/659392.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken original beer lager bottle 24 x 330ml__24x330ml",
+    "name": "heineken original beer lager Bottle 24 x 330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/702344.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "squealing pig sauvignon blanc bottle 750ml__750ml",
+    "name": "squealing pig sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/459634.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "squealing pig co pinot gris bottle 750ml__750ml",
+    "name": "squealing pig co pinot gris Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/793001.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit beer lager ultra low carb can 12x330ml__12x330ml",
+    "name": "speight's summit beer lager ultra low carb Can 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/89440.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit ultra beer lager ultra low carb bottles 15pack 330ml__330ml",
+    "name": "speight's summit ultra beer lager ultra low carb Bottles 15pack 330mL",
+    "packaging_format": "330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6036621.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "corona extra beer lager bottle 12x355ml__12x355ml",
+    "name": "corona extra beer lager Bottle 12x355mL",
+    "packaging_format": "12x355mL",
+    "image": "https://assets.woolworths.com.au/images/2010/377553.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit beer lager ultra low carb can 24x330ml__24x330ml",
+    "name": "speight's summit beer lager ultra low carb Can 24x330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/190443.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "the ned pinot gris bottle 750ml__750ml",
+    "name": "the ned pinot gris Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/916338.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "asahi beer super dry lager bottle 12x330ml__12x330ml",
+    "name": "asahi beer super dry lager Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/742662.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken original beer lager bottle 12 x 330ml__12x330ml",
+    "name": "heineken original beer lager Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910393.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "the ned sauvignon blanc bottle 750ml__750ml",
+    "name": "the ned sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/909010.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin sauvignon blanc bottle 750ml__750ml",
+    "name": "cleanskin sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/914142.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "oyster bay sauvignon blanc marlborough bottle 750ml__750ml",
+    "name": "oyster bay sauvignon blanc marlborough Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/904212.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "jacobs creek reserve sparkling prosecco bottle 750ml__750ml",
+    "name": "jacobs creek reserve sparkling prosecco Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/970638.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "steinlager classic beer lager bottle 24x330ml__24x330ml",
+    "name": "steinlager classic beer lager Bottle 24x330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/706123.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "asahi super dry beer alcohol free 0.0% bottles 6 x 330ml__6x330ml",
+    "name": "asahi super dry beer alcohol free 0.0% Bottles 6 x 330mL",
+    "packaging_format": "6x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/280437.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken beer lager alcohol free 0.0%* bottle 12 x 330ml__12x330ml",
+    "name": "heineken beer lager alcohol free 0.0%* Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/700387.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "export gold beer lager bottle 24 x 330ml__24x330ml",
+    "name": "export gold beer lager Bottle 24 x 330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910479.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "montana classics sauvignon blanc bottle 750ml__750ml",
+    "name": "montana classics sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/363806.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "the ned rose bottle 750ml__750ml",
+    "name": "the ned rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/942391.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "deutz marlborough cuvee brut bottle 750ml__750ml",
+    "name": "deutz marlborough cuvee brut Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/86119.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin pinot gris bottle 750ml__750ml",
+    "name": "cleanskin pinot gris Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/322007.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin pinot noir bottle 750ml__750ml",
+    "name": "cleanskin pinot noir Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/727931.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "villa maria private bin sauvignon blanc bottle 750ml__750ml",
+    "name": "villa maria private bin sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/902184.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "stoneleigh sauvignon blanc marlborough bottle 750ml__750ml",
+    "name": "stoneleigh sauvignon blanc marlborough Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/900044.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin merlot bottle 750ml__750ml",
+    "name": "cleanskin merlot Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/914140.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "export ultra beer low carb lager bottle 24 x 330ml__24x330ml",
+    "name": "export ultra beer low carb lager Bottle 24 x 330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/290068.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "peroni nastra azzurro beer lager bottle 12x330ml__12x330ml",
+    "name": "peroni nastra azzurro beer lager Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/322459.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "wither hills sauvignon blanc bottle 750ml__750ml",
+    "name": "wither hills sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/901312.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "export ultra beer low carb lager bottle 12 x 330ml__12x330ml",
+    "name": "export ultra beer low carb lager Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/290112.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "boundary road brewery beer ultra low carb lager 10 pack 330ml__330ml",
+    "name": "boundary road brewery beer ultra low carb lager 10 pack 330mL",
+    "packaging_format": "330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6033182.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "peroni nastro azzurro beer lager alcohol free 0.0%* bottle 12x330ml__12x330ml",
+    "name": "peroni nastro azzurro beer lager alcohol free 0.0%* Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/206066.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "parrotdog birdseye craft beer hazy ipa can 6x330ml__6x330ml",
+    "name": "parrotdog birdseye craft beer hazy ipa Can 6x330mL",
+    "packaging_format": "6x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/106372.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken silver beer low carb lager bottle 24 x 330ml__24x330ml",
+    "name": "heineken silver beer low carb lager Bottle 24 x 330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/387097.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "steinlager classic beer lager bottle 15x330ml__15x330ml",
+    "name": "steinlager classic beer lager Bottle 15x330mL",
+    "packaging_format": "15x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910386.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "church road pinot gris bottle 750ml__750ml",
+    "name": "church road pinot gris Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/911084.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "tiger crystal ultra beer low carb lager bottle 12 x 330ml__12x330ml",
+    "name": "tiger crystal ultra beer low carb lager Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/207900.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "heineken original beer lager can 12 x 330ml__12x330ml",
+    "name": "heineken original beer lager Can 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/154045.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "brown brothers sparkling prosecco non vintage 200ml bottles 4pack__4pack",
+    "name": "brown brothers sparkling prosecco non vintage 200ml bottles 4pack",
+    "packaging_format": "4pack",
+    "image": "https://assets.woolworths.com.au/images/2010/643531.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "kiss cider peach vanilla can 500ml__500ml",
+    "name": "kiss cider peach vanilla Can 500mL",
+    "packaging_format": "500mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6034106.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "export ultra beer low carb lager can 24 x 330ml__24x330ml",
+    "name": "export ultra beer low carb lager Can 24 x 330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/385952.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's gold medal beer ale bottle 24x330ml__24x330ml",
+    "name": "speight's gold medal beer ale Bottle 24x330mL",
+    "packaging_format": "24x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/907038.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "lindauer special reserve sparkling brut cuvee bottle 750ml__750ml",
+    "name": "lindauer special reserve sparkling brut cuvee Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/118195.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "whitecliff sauvignon blanc bottle 750ml__750ml",
+    "name": "whitecliff sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/911107.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "ruffino sparkling prosecco doc bottle 750ml__750ml",
+    "name": "ruffino sparkling prosecco doc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/422678.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "yealands merlot bottle 187ml__187ml",
+    "name": "yealands merlot Bottle 187mL",
+    "packaging_format": "187mL",
+    "image": "https://assets.woolworths.com.au/images/2010/18319.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "lindauer classic brut bottle 750ml__750ml",
+    "name": "lindauer classic brut Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/86778.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "asahi beer super dry lager can 12x330ml__12x330ml",
+    "name": "asahi beer super dry lager Can 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/677995.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "church road chardonnay bottle 750ml__750ml",
+    "name": "church road chardonnay Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/911193.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "monteith's cider crushed apple bottle 12 x 330ml__12x330ml",
+    "name": "monteith's cider crushed apple Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/702384.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "chasseur white blend dry cask 3l__3l",
+    "name": "chasseur white blend dry Cask 3L",
+    "packaging_format": "3L",
+    "image": "https://assets.woolworths.com.au/images/2010/911168.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin shiraz bottle 750ml__750ml",
+    "name": "cleanskin shiraz Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/724436.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "mac's craft beer slim hazy ipa low carb can 12x330ml__12x330ml",
+    "name": "mac's craft beer slim hazy ipa low carb Can 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/385092.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "corbans white label marlborough sauvignon blanc screw cap 750ml__750ml",
+    "name": "corbans white label marlborough sauvignon blanc screw cap 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/911119.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "dashwood sauvignon blanc bottle 750ml__750ml",
+    "name": "dashwood sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/120303.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "daniel le brun brut methode traditionelle bottle 750ml__750ml",
+    "name": "daniel le brun brut methode traditionelle Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/911244.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "babydoll rose bottle 750ml__750ml",
+    "name": "babydoll rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/846579.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "steinlager beer alcohol free bottle 12x330ml__12x330ml",
+    "name": "steinlager beer alcohol free Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/602064.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "bijou terre de providence rose bottle 750ml__750ml",
+    "name": "bijou terre de providence rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/275678.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "wither hills pinot gris bottle 750ml__750ml",
+    "name": "wither hills pinot gris Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/344160.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "speight's summit beer lager alcohol free 0.5% bottle 12x330ml__12x330ml",
+    "name": "speight's summit beer lager alcohol free 0.5% Bottle 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/367446.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "maschio sparkling prosecco doc bottle 750ml__750ml",
+    "name": "maschio sparkling prosecco doc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/776549.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "grant burge shiraz barossa ink bottle 750ml__750ml",
+    "name": "grant burge shiraz barossa ink Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/641701.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "peroni beer lager nastro azzurro 10 pack 330ml__330ml",
+    "name": "peroni beer lager nastro azzurro 10 pack 330mL",
+    "packaging_format": "330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6033183.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "rochdale cider classic apple 330ml cans 12pack__12pack",
+    "name": "rochdale cider classic apple 330ml cans 12pack",
+    "packaging_format": "12pack",
+    "image": "https://assets.woolworths.com.au/images/2010/708124.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "lindauer classic sparkling brut bottle 4x200ml__4x200ml",
+    "name": "lindauer classic sparkling brut Bottle 4x200mL",
+    "packaging_format": "4x200mL",
+    "image": "https://assets.woolworths.com.au/images/2010/739049.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "church road merlot cabernet sauvignon bottle 750ml__750ml",
+    "name": "church road merlot cabernet sauvignon Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910786.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "tread softly prosecco can 250ml__250ml",
+    "name": "tread softly prosecco Can 250mL",
+    "packaging_format": "250mL",
+    "image": "https://assets.woolworths.com.au/images/2010/57025.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "fickle mistress rose bottle 750ml__750ml",
+    "name": "fickle mistress rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/532944.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "zeffer cider crisp apple alcohol free 0.0%* can 4x330ml__4x330ml",
+    "name": "zeffer cider crisp apple alcohol free 0.0%* Can 4x330mL",
+    "packaging_format": "4x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/179887.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "selaks premium selection pinot noir bottle 750ml__750ml",
+    "name": "selaks premium selection pinot noir Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/745811.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "orchard thieves cider apple bottle 12 x 330ml__12x330ml",
+    "name": "orchard thieves cider apple Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/581343.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "chasseur white blend medium cask 3l__3l",
+    "name": "chasseur white blend medium Cask 3L",
+    "packaging_format": "3L",
+    "image": "https://assets.woolworths.com.au/images/2010/911179.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "tiger beer lager bottle 12 x 330ml__12x330ml",
+    "name": "tiger beer lager Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910420.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "monteith's navigator beer low carb hazy can 12 x 330ml__12x330ml",
+    "name": "monteith's navigator beer low carb hazy Can 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6021325.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "kim crawford sauvignon blanc bottle 750ml__750ml",
+    "name": "kim crawford sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/900676.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "country white blend dry cask 3l__3l",
+    "name": "country white blend dry Cask 3L",
+    "packaging_format": "3L",
+    "image": "https://assets.woolworths.com.au/images/2010/911141.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "whitecliff shiraz bottle 750ml__750ml",
+    "name": "whitecliff shiraz Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/330533.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "country white blend medium cask 3l__3l",
+    "name": "country white blend medium Cask 3L",
+    "packaging_format": "3L",
+    "image": "https://assets.woolworths.com.au/images/2010/911142.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "19 crimes shiraz bottle 750ml__750ml",
+    "name": "19 crimes shiraz Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/541314.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "ngatarawa stables pinot noir bottle 750ml__750ml",
+    "name": "ngatarawa stables pinot noir Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/6003558.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "brb craft beer hazy pale ale can 12x330ml__12x330ml",
+    "name": "brb craft beer hazy pale ale Can 12x330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/140733.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "mumm grand cordon rouge champagne brut bottle 750ml__750ml",
+    "name": "mumm grand cordon rouge champagne brut Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/144813.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "export gold beer lager bottle 12 x 330ml__12x330ml",
+    "name": "export gold beer lager Bottle 12 x 330mL",
+    "packaging_format": "12x330mL",
+    "image": "https://assets.woolworths.com.au/images/2010/910461.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "lindauer classic sparkling sauvignon blanc bottle 750ml__750ml",
+    "name": "lindauer classic sparkling sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/331899.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "jacobs creek sauvignon blanc bottle 750ml__750ml",
+    "name": "jacobs creek sauvignon blanc Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/320969.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "yealands sauvignon blanc bottle 187ml__187ml",
+    "name": "yealands sauvignon blanc Bottle 187mL",
+    "packaging_format": "187mL",
+    "image": "https://assets.woolworths.com.au/images/2010/12850.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  },
+  {
+    "product_key": "cleanskin rose bottle 750ml__750ml",
+    "name": "cleanskin rose Bottle 750mL",
+    "packaging_format": "750mL",
+    "image": "https://assets.woolworths.com.au/images/2010/468897.jpg?impolicy=wowcdxwbjbx&w=200&h=200"
+  }
+]
