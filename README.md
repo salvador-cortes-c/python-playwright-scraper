@@ -419,7 +419,7 @@ The ±25% jitter prevents multiple workers from retrying in sync.
 
 ## GitHub Actions
 
-The workflow `.github/workflows/scrape_provider.yml` runs daily at 2 AM UTC and can be triggered manually from the Actions tab.
+The workflow `.github/workflows/scrape_provider.yml` is currently disabled for daily schedule, but it can still be triggered manually from the Actions tab.
 
 ### Count workflow (stores + categories)
 

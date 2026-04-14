@@ -22,7 +22,7 @@ git push -u origin main
 ### 3. Available Workflows
 
 #### Daily Scrape (`scrape_provider.yml`)
-- **Schedule**: Daily at 2 AM UTC
+- **Schedule**: Disabled for daily run (manual trigger only)
 - **Manual trigger**: Available from GitHub UI
 - **Parameters**: URL, `site_profile`, provider, limit, store name
 - **Output**: Artifacts with JSON data
@@ -48,7 +48,8 @@ After each run:
 ## Customization
 
 ### Change Schedule
-Edit `.github/workflows/scrape_provider.yml`:
+The daily schedule is currently disabled in `.github/workflows/scrape_provider.yml`.
+To re-enable a schedule, uncomment or add a `schedule:` block, for example:
 ```yaml
 schedule:
   # Every 6 hours

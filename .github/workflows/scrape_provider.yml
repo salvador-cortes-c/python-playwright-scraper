@@ -1,9 +1,9 @@
 name: Daily Product Scrape
 
 'on':
-  schedule:
-    # Run at 2 AM UTC daily (adjust for your timezone)
-    - cron: '0 2 * * *'
+  # Daily schedule disabled
+  # schedule:
+  #   - cron: '0 2 * * *'
   
   # Allow manual triggering from GitHub UI
   workflow_dispatch:
