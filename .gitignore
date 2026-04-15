@@ -53,9 +53,11 @@ price_snapshots.json
 scrape_progress.json
 storage_state.json
 category_urls*.json
+*_products.json
+*_snapshots.json
+*_progress.json
 
 # Test/output files
-*.json  # Except requirements.txt
 !requirements.txt
 *.html
 *.log
