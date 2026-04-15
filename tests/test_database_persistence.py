@@ -26,7 +26,7 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertEqual(
             normalized,
             (
-                "asahi beer super dry lager bottle 12x330ml__12x330ml",
+                "asahi beer super dry lager bottle 12x330ml_12x330ml",
                 "Asahi Beer Super Dry Lager Bottle 12x330mL",
                 "12x330mL",
             ),
@@ -38,6 +38,7 @@ class DatabasePersistenceTests(unittest.TestCase):
     def test_infer_supermarket_name_from_store_or_url(self):
         self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")
         self.assertEqual(_infer_supermarket_name(store_name="Pak'nSave Albany"), "Pak'nSave")
+        self.assertEqual(_infer_supermarket_name(store_name="PAKn'SAVE Kilbirnie"), "Pak'nSave")
         self.assertEqual(
             _infer_supermarket_name(source_url="https://www.woolworths.co.nz/shop/browse/fruit-veg?page=1"),
             "Woolworths",
@@ -75,6 +76,67 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertEqual(_extract_unit_price_text("Unit price $6.92 / 1L each"), "$6.92 / 1L")
         self.assertEqual(_extract_unit_price_text("$6.92 / 1L per"), "$6.92 / 1L")
 
+    def test_scraper_infers_paknsave_branding_variant_from_store_name(self):
+        from scraper import _infer_supermarket_name_from_store_name
+
+        self.assertEqual(_infer_supermarket_name_from_store_name("PAKn'SAVE Kilbirnie"), "Pak'nSave")
+
+    def test_scrape_products_uses_product_subtitle_for_packaging(self):
+        from scraper import scrape_products_from_html
+
+        html = """
+        <div data-testid="product-5000560-EA-000">
+          <p data-testid="product-title">Heineken Lager Beer Bottles</p>
+          <p data-testid="product-subtitle">12 x 330ml</p>
+          <img data-testid="product-image" src="/img1.png" />
+          <p data-testid="price-dollars">29</p>
+          <p data-testid="price-cents">99</p>
+          <p data-testid="non-promo-unit-price"></p>
+        </div>
+        <div data-testid="product-5000795-EA-000">
+          <p data-testid="product-title">Heineken Lager Beer Bottles</p>
+          <p data-testid="product-subtitle">24 x 330ml</p>
+          <img data-testid="product-image" src="/img2.png" />
+          <p data-testid="price-dollars">47</p>
+          <p data-testid="price-cents">99</p>
+          <p data-testid="non-promo-unit-price"></p>
+        </div>
+        """
+
+        products, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1",
+            product_selector="div[data-testid^='product-'][data-testid$='-000']",
+            name_selector="[data-testid='product-title']",
+            price_selector="[data-testid='price-dollars']",
+            price_cents_selector="[data-testid='price-cents']",
+            unit_price_selector="[data-testid='non-promo-unit-price']",
+            promo_price_dollars_selector="",
+            promo_price_cents_selector="",
+            promo_unit_price_selector="",
+            image_selector="[data-testid='product-image']",
+            limit=10,
+            query=None,
+            supermarket_name="Pak'nSave",
+            store_name="PAKn'SAVE Kilbirnie",
+        )
+
+        self.assertEqual([product.packaging_format for product in products], ["12x330ml", "24x330ml"])
+        self.assertEqual(
+            [product.product_key for product in products],
+            [
+                "heineken lager beer bottles_12x330ml",
+                "heineken lager beer bottles_24x330ml",
+            ],
+        )
+        self.assertEqual(
+            [snapshot.product_key for snapshot in snapshots],
+            [
+                "heineken lager beer bottles_12x330ml",
+                "heineken lager beer bottles_24x330ml",
+            ],
+        )
+
     def test_dedupe_price_snapshots_collapses_duplicates_from_same_category_run(self):
         class Snapshot:
             def __init__(self, product_key, supermarket_name, source_url, scraped_at, price='4.99'):
@@ -89,13 +151,44 @@ class DatabasePersistenceTests(unittest.TestCase):
 
         snapshots = [
             Snapshot(
-                'abc__1kg',
+                'abc_1kg',
                 'New World Karori',
                 'https://www.newworld.co.nz/shop/category/pantry?pg=1',
                 '2026-04-04T06:00:00+00:00',
             ),
             Snapshot(
-                'abc__1kg',
+                'abc_1kg',
+                'New World Karori',
+                'https://www.newworld.co.nz/shop/category/pantry?pg=4',
+                '2026-04-04T06:00:00.200000+00:00',
+            ),
+        ]
+
+        deduped = dedupe_price_snapshots(snapshots)
+
+        self.assertEqual(len(deduped), 2)
+
+    def test_dedupe_price_snapshots_collapses_exact_duplicate_source_urls(self):
+        class Snapshot:
+            def __init__(self, product_key, supermarket_name, source_url, scraped_at, price='4.99'):
+                self.product_key = product_key
+                self.supermarket_name = supermarket_name
+                self.source_url = source_url
+                self.scraped_at = scraped_at
+                self.price = price
+                self.unit_price = '$4.99/kg'
+                self.promo_price = ''
+                self.promo_unit_price = ''
+
+        snapshots = [
+            Snapshot(
+                'abc_1kg',
+                'New World Karori',
+                'https://www.newworld.co.nz/shop/category/pantry?pg=4',
+                '2026-04-04T06:00:00+00:00',
+            ),
+            Snapshot(
+                'abc_1kg',
                 'New World Karori',
                 'https://www.newworld.co.nz/shop/category/pantry?pg=4',
                 '2026-04-04T06:00:00.200000+00:00',
@@ -119,9 +212,9 @@ class DatabasePersistenceTests(unittest.TestCase):
                 self.promo_unit_price = ''
 
         snapshots = [
-            Snapshot('abc__1kg', 'New World Karori', '4.99'),
-            Snapshot('abc__1kg', 'New World Metro', '4.99'),
-            Snapshot('abc__1kg', 'New World Karori', '5.49'),
+            Snapshot('abc_1kg', 'New World Karori', '4.99'),
+            Snapshot('abc_1kg', 'New World Metro', '4.99'),
+            Snapshot('abc_1kg', 'New World Karori', '5.49'),
         ]
 
         deduped = dedupe_price_snapshots(snapshots)
@@ -142,8 +235,8 @@ class DatabasePersistenceTests(unittest.TestCase):
                 self.promo_unit_price = ''
 
         snapshots = [
-            Snapshot('abc__1kg', 'New World Karori'),
-            Snapshot('abc__1kg', 'New World Metro'),
+            Snapshot('abc_1kg', 'New World Karori'),
+            Snapshot('abc_1kg', 'New World Metro'),
         ]
 
         deduped = dedupe_price_snapshots(snapshots)

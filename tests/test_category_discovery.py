@@ -471,7 +471,7 @@ class CategoryDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(products), 1)
         self.assertEqual(products[0].name, "Asahi Super Dry Beer Bottle 12x330mL")
         self.assertEqual(products[0].packaging_format, "12x330mL")
-        self.assertEqual(products[0].product_key, "asahi super dry beer bottle 12x330ml__12x330ml")
+        self.assertEqual(products[0].product_key, "asahi super dry beer bottle 12x330ml_12x330ml")
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0].price, "24.99")
 

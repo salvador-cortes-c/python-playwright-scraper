@@ -97,7 +97,7 @@ def _normalize_product_record(
     if not clean_packaging:
         clean_packaging = _extract_packaging_from_name(clean_name)
 
-    clean_key = f"{clean_name}__{clean_packaging}".lower() if clean_packaging else clean_name.lower()
+    clean_key = f"{clean_name}_{clean_packaging}".lower() if clean_packaging else clean_name.lower()
     return clean_key, clean_name, clean_packaging
 
 
@@ -105,7 +105,8 @@ def _supermarket_code(name: str | None) -> str:
     normalized = str(name or "").strip().lower()
     if not normalized:
         return ""
-    if "pak'nsave" in normalized or "paknsave" in normalized:
+    compact = re.sub(r"[^a-z0-9]+", "", normalized)
+    if compact == "paknsave" or "paknsave" in compact:
         return "paknsave"
     if "woolworths" in normalized or "countdown" in normalized:
         return "woolworths"
@@ -263,9 +264,13 @@ def _canonical_snapshot_source_url(url: str | None) -> str:
         return ""
     parsed = urlparse(raw)
     normalized_path = parsed.path.rstrip("/") or parsed.path
-    if _is_category_like_path(normalized_path):
-        return _canonical_category_url(raw)
-    return urlunparse(parsed._replace(netloc=parsed.netloc.lower(), path=normalized_path, fragment=""))
+    return urlunparse(
+        parsed._replace(
+            netloc=parsed.netloc.lower(),
+            path=normalized_path,
+            fragment="",
+        )
+    )
 
 
 def dedupe_price_snapshots(snapshots: Iterable) -> list:

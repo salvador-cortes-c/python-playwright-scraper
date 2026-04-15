@@ -832,7 +832,7 @@ def _product_key(name: str, packaging_format: str) -> str:
     clean_packaging = _clean_text(packaging_format)
     if not clean_packaging:
         return clean_name.lower()
-    return f"{clean_name}__{clean_packaging}".lower()
+    return f"{clean_name}_{clean_packaging}".lower()
 
 
 def _replace_last_nth_child(selector: str, nth: int) -> str:
@@ -956,6 +956,20 @@ def _infer_generic_store_name_from_url(url: str | None) -> str:
         return "Pak'nSave"
     if "newworld.co.nz" in host:
         return "New World"
+    return ""
+
+
+def _infer_supermarket_name_from_store_name(store_name: str | None) -> str:
+    if not store_name:
+        return ""
+    normalized = store_name.strip().lower()
+    compact = re.sub(r"[^a-z0-9]+", "", normalized)
+    if "new world" in normalized:
+        return "New World"
+    if compact == "paknsave" or "paknsave" in compact:
+        return "Pak'nSave"
+    if "woolworths" in normalized or "countdown" in normalized:
+        return "Woolworths"
     return ""
 
 
@@ -2646,6 +2660,9 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                     print(f"Scraping URL: {current_url}")
                     rl_attempt = 0
                     page_crash_attempt = 0
+                    products: list[Product] = []
+                    snapshots: list[ProductPriceSnapshot] = []
+
                     while True:
                         try:
                             products, snapshots = await scrape_url_playwright(
@@ -2655,7 +2672,43 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 supermarket_name=current_store_name,
                                 store_name=current_store_name,
                             )
+
+                            if args.resume:
+                                progress.completed_urls.append(current_url)
+                                save_progress(progress_path, progress)
+
+                            if args.flush_every_url:
+                                write_products(output_path, all_products + products)
+                                if args.append_snapshots:
+                                    write_price_snapshots(
+                                        price_output_path,
+                                        merge_snapshots(load_price_snapshots(price_output_path), all_snapshots + snapshots),
+                                    )
+                                else:
+                                    write_price_snapshots(price_output_path, all_snapshots + snapshots)
+
+                                if args.persist_db:
+                                    maybe_persist_to_database(
+                                        args,
+                                        provider="playwright",
+                                        mode="scrape",
+                                        started_at=run_started_at,
+                                        products=products,
+                                        snapshots=snapshots,
+                                        categories=discovered_categories_all,
+                                    )
+
+                            await context.storage_state(path=str(storage_state_path))
+
+                            if args.delay_seconds > 0:
+                                jitter = max(0.0, float(args.delay_jitter_seconds))
+                                wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
+                                await page.wait_for_timeout(int(wait_seconds * 1000))
+
+                            all_products.extend(products)
+                            all_snapshots.extend(snapshots)
                             break
+
                         except RateLimitError as exc:
                             print(f"WARNING: {exc}")
                             if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
@@ -2688,41 +2741,6 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
                     if rate_limit_hit:
                         break
-
-                    all_products.extend(products)
-                    all_snapshots.extend(snapshots)
-
-                    if args.resume:
-                        progress.completed_urls.append(current_url)
-                        save_progress(progress_path, progress)
-
-                    if args.flush_every_url:
-                        write_products(output_path, all_products)
-                        if args.append_snapshots:
-                            write_price_snapshots(
-                                price_output_path,
-                                merge_snapshots(load_price_snapshots(price_output_path), all_snapshots),
-                            )
-                        else:
-                            write_price_snapshots(price_output_path, all_snapshots)
-
-                        if args.persist_db:
-                            maybe_persist_to_database(
-                                args,
-                                provider="playwright",
-                                mode="scrape",
-                                started_at=run_started_at,
-                                products=products,
-                                snapshots=snapshots,
-                                categories=discovered_categories_all,
-                            )
-
-                    await context.storage_state(path=str(storage_state_path))
-
-                    if args.delay_seconds > 0:
-                        jitter = max(0.0, float(args.delay_jitter_seconds))
-                        wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
-                        await page.wait_for_timeout(int(wait_seconds * 1000))
 
             if args.scrape_all_stores:
                 if store_indices is not None:
@@ -2830,6 +2848,11 @@ def scrape_products_from_html(
 
         name_el = _safe_select_one(card, name_selector)
         name = _clean_text(name_el.get_text(" ", strip=True) if name_el else "")
+        subtitle_el = _safe_select_one(
+            card,
+            "[data-testid='product-subtitle'], [data-testid='product-sub-title'], .product-subtitle, .product-sub-title",
+        )
+        subtitle = _clean_text(subtitle_el.get_text(" ", strip=True) if subtitle_el else "")
 
         dollars_el = _safe_select_one(card, price_selector)
         cents_el = _safe_select_one(card, price_cents_selector)
@@ -2984,7 +3007,11 @@ def scrape_products_from_html(
         if query_normalized and query_normalized not in name.lower():
             continue
 
-        packaging_format = _extract_packaging_from_name(name) or _extract_packaging_format(unit_price)
+        packaging_format = (
+            _extract_packaging_from_name(name)
+            or _extract_packaging_from_name(subtitle)
+            or _extract_packaging_format(unit_price)
+        )
         product_key = _product_key(name, packaging_format)
 
         products.append(
@@ -3017,6 +3044,8 @@ async def scrape_url(
     url: str,
     provider: AnyProvider,
     args: argparse.Namespace,
+    supermarket_name: str | None = None,
+    store_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     html, error, status = await provider.fetch(session, url)
 
@@ -3058,6 +3087,8 @@ async def scrape_url(
         image_selector=args.image_selector,
         limit=max(1, int(args.limit)),
         query=args.query,
+        supermarket_name=supermarket_name,
+        store_name=store_name,
     )
     return products, snapshots
 
@@ -3436,11 +3467,10 @@ async def main() -> None:
 
     print(f"Using scraping provider: {provider_name}")
 
-    unsupported_flags_used = any(
+    browser_only_flags = any(
         [
             args.choose_store,
             args.scrape_all_stores,
-            bool(args.store_name),
             bool(args.store_names),
             args.max_stores is not None,
             args.headed,
@@ -3448,10 +3478,15 @@ async def main() -> None:
             args.manual_wait_seconds > 0,
         ]
     )
-    if unsupported_flags_used:
+    if browser_only_flags:
         print(
             "WARNING: Store interaction and browser-only flags are only supported in --provider playwright "
             "and will be ignored for API-based providers."
+        )
+    if args.store_name and provider_name != "playwright":
+        print(
+            "NOTE: --store-name is honored as a metadata override for API-based providers. "
+            "It does not select the store in the remote site; it only sets the persisted store name."
         )
 
     progress_path = Path(args.progress_file)
@@ -3655,6 +3690,12 @@ async def main() -> None:
                         url=current_url,
                         provider=provider,
                         args=args,
+                        supermarket_name=(
+                            _infer_supermarket_name_from_store_name(args.store_name)
+                            if args.store_name and provider_name != "playwright"
+                            else None
+                        ),
+                        store_name=args.store_name or None,
                     )
                     break
                 except RateLimitError as exc:
@@ -3713,20 +3754,14 @@ async def main() -> None:
                 if args.persist_db:
                     maybe_persist_to_database(
                         args,
-                        provider=provider,
+                        provider=provider_name,
                         mode="scrape",
                         started_at=run_started_at,
-                        products=products,
-                        snapshots=snapshots,
+                        products=all_products,
+                        snapshots=all_snapshots,
                         categories=discovered_categories_all,
                     )
 
-            if args.delay_seconds > 0:
-                jitter = max(0.0, float(args.delay_jitter_seconds))
-                wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
-                await asyncio.sleep(wait_seconds)
-
-    if args.dedupe:
         merged: dict[str, Product] = {}
         merged_order: list[str] = []
 
