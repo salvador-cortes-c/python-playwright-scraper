@@ -827,6 +827,54 @@ def _extract_non_member_unit_price_text(value: str | None) -> str:
     return _clean_text(match.group(1)) if match else ""
 
 
+def _normalize_product_name(name: str | None) -> str:
+    """
+    Normalize product names by removing common product attributes that should
+    be captured in packaging_format instead. This prevents duplicate products
+    when different scrapers capture the same product with different modifier text.
+    
+    Examples:
+    - "Montana Affinity Sauvignon Blanc Low Alcohol Screw cap" → "Montana Affinity Sauvignon Blanc"
+    - "Wine X Low Alcohol" → "Wine X"
+    - "Product Y Screw Cap 750ml" → "Product Y 750ml" (keeps numerical packaging)
+    """
+    if not name:
+        return ""
+    
+    cleaned = _clean_text(name)
+    if not cleaned:
+        return ""
+    
+    # Remove common non-packaging modifiers (case-insensitive)
+    # Keep modifiers in lowercase for the regex
+    lower_name = " " + cleaned.lower() + " "
+    
+    # Patterns to remove (word boundaries with spaces)
+    remove_patterns = [
+        r"\s+low\s+alcohol\s+",
+        r"\s+low\salcohol$",
+        r"\s+screw\s+cap\s+",
+        r"\s+screw\s+cap$",
+        r"\s+twist\s+cap\s+",
+        r"\s+twist\s+cap$",
+        r"\s+cork\s+",
+        r"\s+cork$",
+        r"\s+bottle\s+",
+        r"\s+bottle$",
+    ]
+    
+    for pattern in remove_patterns:
+        lower_name = re.sub(pattern, " ", lower_name, flags=re.IGNORECASE)
+    
+    # Restore original case for words that were NOT removed
+    # Split into tokens and reconstruct with original case when possible
+    normalized_lower = _clean_text(lower_name).lower()
+    
+    # For simplicity, just return the cleaned lower version
+    # (product_key will lowercase it anyway)
+    return _clean_text(lower_name)
+
+
 def _product_key(name: str, packaging_format: str) -> str:
     clean_name = _clean_text(name)
     clean_packaging = _clean_text(packaging_format)
@@ -3007,12 +3055,17 @@ def scrape_products_from_html(
         if query_normalized and query_normalized not in name.lower():
             continue
 
+        # Normalize product name to prevent duplicates when different scrapers
+        # capture modifiers like "Low Alcohol" or "Screw Cap" in the title.
+        # Use normalized name for product_key while keeping original for display.
+        normalized_name = _normalize_product_name(name)
+        
         packaging_format = (
-            _extract_packaging_from_name(name)
+            _extract_packaging_from_name(normalized_name)
             or _extract_packaging_from_name(subtitle)
             or _extract_packaging_format(unit_price)
         )
-        product_key = _product_key(name, packaging_format)
+        product_key = _product_key(normalized_name, packaging_format)
 
         products.append(
             Product(
