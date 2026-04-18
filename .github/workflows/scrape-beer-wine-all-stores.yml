@@ -77,7 +77,6 @@ jobs:
             --site-profile ${{ matrix.site_profile }} \
             --provider playwright \
             --store-name "${{ matrix.store_name }}" \
-            --discover-category-urls \
             --persist-db \
             --output products_${{ matrix.artifact_suffix }}.json \
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
@@ -105,7 +104,6 @@ jobs:
             --site-profile ${{ matrix.site_profile }} \
             --provider oxylabs \
             --store-name "${{ matrix.store_name }}" \
-            --discover-category-urls \
             --persist-db \
             --output products_${{ matrix.artifact_suffix }}.json \
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
