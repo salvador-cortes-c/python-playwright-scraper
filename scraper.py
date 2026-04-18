@@ -2966,11 +2966,14 @@ def scrape_products_from_html(
             is_member_price = bool(re.search(r"\bmember\s+price\b", strap_title_text, re.IGNORECASE))
 
             if is_member_price:
-                # price_cents: price extracted from .noMemberCupPrice.ng-star-inserted (mandatory)
+                # price_cents: price extracted from .noMemberCupPrice (try strict selector first, then fallback)
                 no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice.ng-star-inserted")
+                if not no_member_cup_el:
+                    # Fallback: try without the .ng-star-inserted class (DOM structure may have changed)
+                    no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice")
                 no_member_cup_text = _clean_text(no_member_cup_el.get_text(" ", strip=True) if no_member_cup_el else "")
                 if not no_member_cup_text:
-                    print(f"ERROR: [member-price] .noMemberCupPrice.ng-star-inserted is empty for '{name}' at {url}", flush=True)
+                    print(f"ERROR: [member-price] .noMemberCupPrice (with/without .ng-star-inserted) is empty for '{name}' at {url}", flush=True)
                 price_re_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", no_member_cup_text)
                 if price_re_match:
                     price = price_re_match.group(1)
