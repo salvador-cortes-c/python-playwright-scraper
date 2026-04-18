@@ -143,7 +143,7 @@ class ProductDeduplicator:
 
         try:
             with psycopg.connect(self.db_url) as conn:
-                with conn.cursor(row_factory=dict) as cur:
+                with conn.cursor() as cur:
                     # Query for products in scope (using actual schema columns)
                     query = """
                         SELECT DISTINCT
@@ -166,10 +166,14 @@ class ProductDeduplicator:
                     query += " ORDER BY p.product_key"
 
                     cur.execute(query, params)
-                    products = cur.fetchall()
+                    rows = cur.fetchall()
 
-                    if len(products) < 2:
+                    if len(rows) < 2:
                         return []
+
+                    # Convert tuples to dicts
+                    col_names = ["product_key", "name", "packaging_format"]
+                    products = [dict(zip(col_names, row)) for row in rows]
 
                     # Compute embeddings
                     embeddings = []

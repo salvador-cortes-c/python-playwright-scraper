@@ -2966,14 +2966,17 @@ def scrape_products_from_html(
             is_member_price = bool(re.search(r"\bmember\s+price\b", strap_title_text, re.IGNORECASE))
 
             if is_member_price:
-                # price_cents: price extracted from .noMemberCupPrice (try strict selector first, then fallback)
+                # price_cents: price extracted from .noMemberCupPrice (try multiple selectors with fallbacks)
                 no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice.ng-star-inserted")
                 if not no_member_cup_el:
-                    # Fallback: try without the .ng-star-inserted class (DOM structure may have changed)
+                    # Fallback 1: try without the .ng-star-inserted class (DOM structure may have changed)
                     no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice")
+                if not no_member_cup_el:
+                    # Fallback 2: try .previousPrice (alternative selector for regular price)
+                    no_member_cup_el = _safe_select_one(card, ".previousPrice")
                 no_member_cup_text = _clean_text(no_member_cup_el.get_text(" ", strip=True) if no_member_cup_el else "")
                 if not no_member_cup_text:
-                    print(f"ERROR: [member-price] .noMemberCupPrice (with/without .ng-star-inserted) is empty for '{name}' at {url}", flush=True)
+                    print(f"ERROR: [member-price] .noMemberCupPrice/.previousPrice selectors all empty for '{name}' at {url}", flush=True)
                 price_re_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", no_member_cup_text)
                 if price_re_match:
                     price = price_re_match.group(1)
