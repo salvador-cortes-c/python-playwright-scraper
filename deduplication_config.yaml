@@ -1,0 +1,40 @@
+# Product Deduplication Configuration
+
+embedding_model: "all-MiniLM-L6-v2"  # Lightweight, CPU-friendly
+similarity_threshold: 0.85
+
+# Cache embeddings locally to avoid recomputation
+cache_enabled: true
+cache_dir: ".embeddings_cache"
+
+# Consolidation tracking
+consolidation_log: "consolidations_log.json"
+patterns_file: "consolidation_patterns.json"
+
+# When to run deduplication
+trigger:
+  # Option 1: After each scraper run (on-demand)
+  post_scrape: true
+  
+  # Option 2: Scheduled batch deduplicate (future)
+  scheduled: false
+  schedule_interval_hours: 24
+
+# Category-specific thresholds (if needed)
+category_thresholds:
+  wine:
+    threshold: 0.87  # Higher for fine-grained wine variants
+    min_snapshots_before_consolidate: 5  # Only consolidate if product has history
+  
+  beverages:
+    threshold: 0.85
+    min_snapshots_before_consolidate: 3
+
+# Retailer-specific conventions (learned from consolidations)
+retailer_conventions:
+  # This section is auto-populated by extract_patterns()
+  # Example:
+  # woolworths:
+  #   adds_attributes: ["alcohol_level", "closure_type", "vintage"]
+  # new_world:
+  #   adds_attributes: ["closure_type"]

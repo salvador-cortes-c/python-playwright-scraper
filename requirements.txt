@@ -3,3 +3,8 @@ playwright-stealth
 aiohttp==3.12.15
 beautifulsoup4==4.13.4
 psycopg[binary]==3.2.9
+
+# Optional: Product deduplication via semantic similarity
+# Install with: pip install -r requirements.txt[dedup]
+sentence-transformers==3.0.1  # Embedding-based product similarity
+numpy==1.26.4  # Numerical operations
