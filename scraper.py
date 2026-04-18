@@ -418,7 +418,8 @@ class OxylabsProvider(_BaseProvider):
         if geo_location:
             payload["geo_location"] = geo_location
         if self.render_wait_ms > 0:
-            payload["render"] = "html"
+            # Use JavaScript rendering to handle Cloudflare challenges and dynamic content
+            payload["render"] = "html_js"
         if self.premium_proxy:
             payload["user_agent_type"] = "desktop"
         return payload
