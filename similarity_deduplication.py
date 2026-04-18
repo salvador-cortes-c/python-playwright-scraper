@@ -144,23 +144,26 @@ class ProductDeduplicator:
         try:
             with psycopg.connect(self.db_url) as conn:
                 with conn.cursor(row_factory=dict) as cur:
-                    # Query for products in scope
+                    # Query for products in scope (using actual schema columns)
                     query = """
                         SELECT DISTINCT
-                            product_key,
-                            product_name,
-                            normalized_name,
-                            category
-                        FROM products
-                        WHERE active = true
+                            p.product_key,
+                            p.name,
+                            p.packaging_format
+                        FROM products p
                     """
                     params = []
 
+                    # Optional: filter by category if needed
                     if category:
-                        query += " AND category = %s"
-                        params.append(category)
+                        query += """
+                            INNER JOIN product_categories pc ON p.product_key = pc.product_key
+                            INNER JOIN categories c ON pc.category_id = c.id
+                            WHERE c.name ILIKE %s
+                        """
+                        params.append(f"%{category}%")
 
-                    query += " ORDER BY product_key"
+                    query += " ORDER BY p.product_key"
 
                     cur.execute(query, params)
                     products = cur.fetchall()
@@ -171,7 +174,8 @@ class ProductDeduplicator:
                     # Compute embeddings
                     embeddings = []
                     for p in products:
-                        text = p["normalized_name"] or p["product_name"]
+                        # Use product name for embedding
+                        text = p["name"]
                         embedding = self._get_embedding(text, p["product_key"])
                         embeddings.append(embedding)
 
@@ -201,12 +205,11 @@ class ProductDeduplicator:
                                         similarity=sim,
                                         product_a=products[i]["product_key"],
                                         product_b=products[j]["product_key"],
-                                        name_a=products[i]["product_name"],
-                                        name_b=products[j]["product_name"],
-                                        category=products[i].get("category"),
+                                        name_a=products[i]["name"],
+                                        name_b=products[j]["name"],
                                         explanation=self._explain_similarity(
-                                            products[i]["product_name"],
-                                            products[j]["product_name"],
+                                            products[i]["name"],
+                                            products[j]["name"],
                                         ),
                                     )
                                 )
