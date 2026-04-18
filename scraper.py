@@ -27,6 +27,11 @@ from bs4 import BeautifulSoup, Tag
 from database import persist_scrape_results, resolve_database_url
 
 try:
+    from scraper_deduplication_integration import DeduplicationIntegration
+except ImportError:
+    DeduplicationIntegration = None
+
+try:
     from playwright.async_api import async_playwright
     from playwright_stealth import Stealth
 except ImportError:
@@ -3478,6 +3483,23 @@ async def main() -> None:
         default=3000,
         help="Deprecated: use --render-wait-ms instead. Kept for backward compatibility.",
     )
+    parser.add_argument(
+        "--skip-deduplication",
+        action="store_true",
+        help="Skip post-scrape semantic deduplication.",
+    )
+    parser.add_argument(
+        "--dedup-auto-threshold",
+        type=float,
+        default=0.95,
+        help="Similarity threshold for auto-consolidation during deduplication (default: 0.95).",
+    )
+    parser.add_argument(
+        "--dedup-review-threshold",
+        type=float,
+        default=0.85,
+        help="Similarity threshold for exporting consolidation suggestions for review (default: 0.85).",
+    )
 
     args = parser.parse_args()
     if args.count_category_pages:
@@ -3857,6 +3879,34 @@ async def main() -> None:
 
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
+
+    # Post-scrape semantic deduplication
+    if not args.skip_deduplication and DeduplicationIntegration:
+        try:
+            print("\n[Dedup] Starting post-scrape semantic deduplication...")
+            dedup = DeduplicationIntegration(
+                auto_consolidate_threshold=args.dedup_auto_threshold,
+                review_threshold=args.dedup_review_threshold,
+            )
+            results = await dedup.run_post_scrape(
+                category=None,
+                auto_consolidate=True,
+                export_suggestions=True,
+                export_patterns=True,
+            )
+            print(f"[Dedup] Results: {results['total_groups']} found, "
+                  f"{results['auto_consolidated']} auto-consolidated, "
+                  f"{results['pending_review']} pending review")
+            if results['exported_files']:
+                print("[Dedup] Exported files:")
+                for file in results['exported_files']:
+                    print(f"       - {file}")
+            if results['errors']:
+                print("[Dedup] ⚠️  Errors occurred:")
+                for error in results['errors']:
+                    print(f"       - {error}")
+        except Exception as e:
+            print(f"[Dedup] ⚠️  Deduplication skipped: {e}")
 
 
 if __name__ == "__main__":
