@@ -3484,11 +3484,6 @@ async def main() -> None:
         help="Deprecated: use --render-wait-ms instead. Kept for backward compatibility.",
     )
     parser.add_argument(
-        "--skip-deduplication",
-        action="store_true",
-        help="Skip post-scrape semantic deduplication.",
-    )
-    parser.add_argument(
         "--dedup-auto-threshold",
         type=float,
         default=0.95,
@@ -3880,8 +3875,8 @@ async def main() -> None:
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
 
-    # Post-scrape semantic deduplication
-    if not args.skip_deduplication and DeduplicationIntegration:
+    # Post-scrape semantic deduplication (always runs when scraping completes)
+    if DeduplicationIntegration:
         try:
             print("\n[Dedup] Starting post-scrape semantic deduplication...")
             dedup = DeduplicationIntegration(

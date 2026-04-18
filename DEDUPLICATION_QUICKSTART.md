@@ -81,7 +81,7 @@ python similarity_deduplication.py --extract-patterns
 
 ## Integration with Scraper
 
-### Run scraper with deduplication
+### Run scraper with automatic deduplication
 
 ```bash
 python scraper.py \
@@ -90,17 +90,16 @@ python scraper.py \
     --persist-db
 ```
 
-Deduplication runs automatically after scraping (unless you add `--skip-deduplication`).
+✅ **Deduplication runs automatically after scraping completes** (always)
 
-### Skip deduplication for this run
+The deduplication runs in the following order:
+1. Scraper fetches products
+2. Layer 1 normalization applied during insert
+3. Results saved to DB
+4. **Layer 2 semantic deduplication runs automatically**
+5. Consolidation suggestions exported for review
 
-```bash
-python scraper.py \
-    --url "https://example.com/products" \
-    --skip-deduplication
-```
-
-### Adjust deduplication thresholds
+### Customize deduplication thresholds
 
 ```bash
 python scraper.py \
@@ -108,6 +107,10 @@ python scraper.py \
     --dedup-auto-threshold 0.92 \
     --dedup-review-threshold 0.82
 ```
+
+**Threshold options:**
+- `--dedup-auto-threshold` (default: 0.95) - Auto-consolidate products above this similarity
+- `--dedup-review-threshold` (default: 0.85) - Export suggestions for manual review above this threshold
 
 ## Available Files
 

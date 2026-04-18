@@ -182,21 +182,22 @@ category_thresholds:
 ```bash
 # Default: auto-consolidate at 0.95, review at 0.85
 python scraper.py --url "..." --persist-db
+# ✅ Deduplication ALWAYS runs after scraping
 
-# Stricter deduplication
+# Stricter deduplication (auto-consolidate at 0.92)
 python scraper.py --url "..." --dedup-auto-threshold 0.92
 
-# Skip deduplication
-python scraper.py --url "..." --skip-deduplication
+# Lower review threshold (export more suggestions)
+python scraper.py --url "..." --dedup-review-threshold 0.80
 ```
 
 ### Workflow
 
 1. Scraper runs, inserts products to DB
 2. Layer 1 normalization applied during insert (fast)
-3. Layer 2 semantic matching runs (post-scrape)
-4. Auto-consolidates high-confidence matches (>0.95)
-5. Exports mid-confidence for review (0.85-0.95)
+3. **Layer 2 semantic matching runs automatically** (post-scrape) ← Always runs
+4. Auto-consolidates high-confidence matches (>0.95 by default)
+5. Exports mid-confidence for review (0.85-0.95 by default)
 6. Extracts patterns from consolidations
 7. Suggests updates to Layer 1 normalization
 
