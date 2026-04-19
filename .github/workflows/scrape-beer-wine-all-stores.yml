@@ -60,6 +60,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Stagger parallel jobs to reduce database deadlock
+        run: |
+          # Add a small delay based on matrix index to prevent concurrent database writes
+          # New World (index 0): 0s, Woolworths (index 1): 8s, PAK'nSAVE (index 2): 16s
+          STAGGER_SECONDS=$(({{ strategy.job-index }} * 8))
+          if [ $STAGGER_SECONDS -gt 0 ]; then
+            echo "🕐 Waiting ${STAGGER_SECONDS}s to stagger database writes..."
+            sleep $STAGGER_SECONDS
+          fi
+
       # Try Playwright first
       - name: Install Playwright browsers
         run: |
