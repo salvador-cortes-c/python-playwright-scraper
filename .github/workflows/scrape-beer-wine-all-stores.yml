@@ -15,26 +15,35 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         include:
+          # New World: Heavy Cloudflare → start with Oxylabs
           - label: New World Karori - Beer & Wine (All pages)
             site_profile: newworld
             url: https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1
             store_name: New World Karori
             artifact_suffix: newworld-karori-all-pages
+            primary_provider: oxylabs
+            fallback_provider: playwright
           
+          # Woolworths: Lighter Cloudflare → start with Playwright (faster)
           - label: Woolworths Karori - Beer & Wine (All pages)
             site_profile: woolworths
             url: https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48
             store_name: Karori Woolworths
             artifact_suffix: woolworths-karori-all-pages
+            primary_provider: playwright
+            fallback_provider: oxylabs
           
+          # PAK'nSAVE: Heavy Cloudflare → start with Oxylabs
           - label: PAK'nSAVE Kilbirnie - Beer & Wine (All pages)
             site_profile: paknsave
             url: https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1
             store_name: PAKn'SAVE Kilbirnie
             artifact_suffix: paknsave-kilbirnie-all-pages
+            primary_provider: oxylabs
+            fallback_provider: playwright
 
     steps:
       - name: Checkout repository
@@ -57,8 +66,8 @@ jobs:
           python -m playwright install firefox
           python -m playwright install-deps firefox
 
-      - name: Run scraper with Playwright (attempt 1)
-        id: playwright_run
+      - name: Run scraper with primary provider
+        id: primary_run
         env:
           SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
@@ -71,22 +80,27 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         continue-on-error: true
         run: |
-          echo "🎯 Starting scrape with Playwright for ${{ matrix.label }}..."
+          echo "🎯 Starting scrape with ${{ matrix.primary_provider }} for ${{ matrix.label }}..."
+          RENDER_WAIT=""
+          if [ "${{ matrix.primary_provider }}" = "playwright" ]; then
+            RENDER_WAIT="--render-wait-ms 2000"
+          fi
           python scraper.py \
             --url "${{ matrix.url }}" \
             --site-profile ${{ matrix.site_profile }} \
-            --provider playwright \
+            --provider ${{ matrix.primary_provider }} \
             --store-name "${{ matrix.store_name }}" \
             --persist-db \
             --output products_${{ matrix.artifact_suffix }}.json \
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
             --limit 100 \
-            --max-pages 1000
-          echo "PLAYWRIGHT_SUCCESS=true" >> $GITHUB_ENV
+            --max-pages 1000 \
+            $RENDER_WAIT
+          echo "PRIMARY_SUCCESS=true" >> $GITHUB_ENV
 
-      # Fallback to Oxylabs if Playwright fails
-      - name: Run scraper with Oxylabs (fallback)
-        if: ${{ steps.playwright_run.outcome == 'failure' }}
+      # Fallback to secondary provider if primary fails
+      - name: Run scraper with fallback provider
+        if: ${{ steps.primary_run.outcome == 'failure' }}
         env:
           SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
@@ -98,18 +112,23 @@ jobs:
           OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          echo "⚠️  Playwright failed, falling back to Oxylabs for ${{ matrix.label }}..."
+          echo "⚠️  ${{ matrix.primary_provider }} failed, falling back to ${{ matrix.fallback_provider }} for ${{ matrix.label }}..."
+          RENDER_WAIT=""
+          if [ "${{ matrix.fallback_provider }}" = "playwright" ]; then
+            RENDER_WAIT="--render-wait-ms 2000"
+          fi
           python scraper.py \
             --url "${{ matrix.url }}" \
             --site-profile ${{ matrix.site_profile }} \
-            --provider oxylabs \
+            --provider ${{ matrix.fallback_provider }} \
             --store-name "${{ matrix.store_name }}" \
             --persist-db \
             --output products_${{ matrix.artifact_suffix }}.json \
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
             --limit 100 \
-            --max-pages 1000
-          echo "PLAYWRIGHT_SUCCESS=false" >> $GITHUB_ENV
+            --max-pages 1000 \
+            $RENDER_WAIT
+          echo "PRIMARY_SUCCESS=false" >> $GITHUB_ENV
 
       - name: Upload artifacts
         if: always()
