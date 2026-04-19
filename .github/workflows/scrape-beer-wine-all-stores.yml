@@ -105,6 +105,8 @@ jobs:
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
             --limit 100 \
             --max-pages 1000 \
+            --delay-seconds 0.0 \
+            --delay-jitter-seconds 0.0 \
             $RENDER_WAIT
           echo "PRIMARY_SUCCESS=true" >> $GITHUB_ENV
 
@@ -137,6 +139,8 @@ jobs:
             --price-output price_snapshots_${{ matrix.artifact_suffix }}.json \
             --limit 100 \
             --max-pages 1000 \
+            --delay-seconds 0.0 \
+            --delay-jitter-seconds 0.0 \
             $RENDER_WAIT
           echo "PRIMARY_SUCCESS=false" >> $GITHUB_ENV
 
