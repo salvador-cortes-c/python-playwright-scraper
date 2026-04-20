@@ -668,7 +668,7 @@ def _maybe_warn_neon_endpoint(database_url: str) -> None:
     print("  Neon read replicas can lag behind recent writes. Use the writer endpoint for scraper persistence.")
 
 
-def maybe_persist_to_database(
+def persist_to_database(
     args: argparse.Namespace,
     *,
     provider: str,
@@ -678,12 +678,11 @@ def maybe_persist_to_database(
     snapshots: list[ProductPriceSnapshot],
     categories: list[CategoryLink],
 ) -> None:
-    if not args.persist_db:
-        return
-
     database_url = resolve_database_url(args.database_url)
     if not database_url:
-        raise SystemExit("--persist-db requires --database-url or DATABASE_URL environment variable.")
+        print("⚠️  WARNING: Database persistence skipped --database-url or DATABASE_URL environment variable not set.")
+        print("   Results saved to JSON files only. To enable database persistence, set DATABASE_URL environment variable.")
+        return
 
     target_summary = _redact_database_url(database_url)
     print(f"Persisting to DB at: {target_summary}")
@@ -2741,16 +2740,15 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 else:
                                     write_price_snapshots(price_output_path, all_snapshots + snapshots)
 
-                                if args.persist_db:
-                                    maybe_persist_to_database(
-                                        args,
-                                        provider="playwright",
-                                        mode="scrape",
-                                        started_at=run_started_at,
-                                        products=products,
-                                        snapshots=snapshots,
-                                        categories=discovered_categories_all,
-                                    )
+                                persist_to_database(
+                                    args,
+                                    provider="playwright",
+                                    mode="scrape",
+                                    started_at=run_started_at,
+                                    products=products,
+                                    snapshots=snapshots,
+                                    categories=discovered_categories_all,
+                                )
 
                             await context.storage_state(path=str(storage_state_path))
 
@@ -2850,7 +2848,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
     print(f"Saved {len(all_products)} products to {output_path}")
     print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
 
-    maybe_persist_to_database(
+    persist_to_database(
         args,
         provider="playwright",
         mode="scrape",
@@ -3474,11 +3472,8 @@ async def main() -> None:
         default=None,
         help="Scraping provider API key or credentials. Alternatively set the provider-specific env var (e.g. SCRAPING_PROVIDER_API_KEY, SCRAPERAPI_KEY, CRAWLBASE_TOKEN, ZENROWS_API_KEY, FLOPPYDATA_API_KEY, OXYLABS_API_KEY). For Oxylabs use USERNAME:PASSWORD.",
     )
-    parser.add_argument(
-        "--persist-db",
-        action="store_true",
-        help="Persist final products and price snapshots to PostgreSQL.",
-    )
+    # Database persistence is always enabled
+    # Removed --persist-db flag as persistence is now mandatory
     parser.add_argument(
         "--database-url",
         default=None,
@@ -3515,6 +3510,7 @@ async def main() -> None:
         await run_playwright_mode(args)
         return
 
+    # Build primary provider
     env_var = _PROVIDER_KEY_ENVVARS.get(provider_name, "")
     api_key: str | None = args.api_key
     if not api_key:
@@ -3527,9 +3523,11 @@ async def main() -> None:
                     api_key = f"{oxylabs_username}:{oxylabs_password}"
         else:
             api_key = os.getenv(env_var) if env_var else None
+    
     render_wait_ms: int = (
         args.render_wait_ms if args.render_wait_ms is not None else args.scrapingbee_wait_ms
     )
+    
     try:
         provider = build_provider(
             provider_name=provider_name,
@@ -3543,6 +3541,32 @@ async def main() -> None:
         raise SystemExit(1)
 
     print(f"Using scraping provider: {provider_name}")
+    
+    # Build fallback provider (oxylabs) if primary is direct
+    fallback_provider = None
+    if provider_name == "direct":
+        try:
+            # Try to build oxylabs provider for fallback
+            oxylabs_api_key = os.getenv("OXYLABS_API_KEY")
+            if not oxylabs_api_key:
+                oxylabs_username = os.getenv("OXYLABS_USERNAME")
+                oxylabs_password = os.getenv("OXYLABS_PASSWORD")
+                if oxylabs_username and oxylabs_password:
+                    oxylabs_api_key = f"{oxylabs_username}:{oxylabs_password}"
+            
+            if oxylabs_api_key:
+                fallback_provider = build_provider(
+                    provider_name="oxylabs",
+                    api_key=oxylabs_api_key,
+                    render_wait_ms=render_wait_ms,
+                    country_code=args.country_code,
+                    premium_proxy=args.premium_proxy,
+                )
+                print("Fallback provider (oxylabs) available for automatic fallback")
+            else:
+                print("Warning: OXYLABS_API_KEY or OXYLABS_USERNAME/PASSWORD not set, fallback to oxylabs will not be available")
+        except Exception as e:
+            print(f"Warning: Could not create fallback provider: {e}")
 
     browser_only_flags = any(
         [
@@ -3759,6 +3783,7 @@ async def main() -> None:
             rl_attempt = 0
             transient_attempt = 0
             products, snapshots = [], []
+            used_fallback = False
 
             while True:
                 try:
@@ -3775,38 +3800,65 @@ async def main() -> None:
                         store_name=args.store_name or None,
                     )
                     break
-                except RateLimitError as exc:
-                    print(f"WARNING: {exc}")
-                    if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
-                        rate_limit_hit = True
-                        break
-                    rl_attempt += 1
-                    wait_seconds = _compute_backoff(
-                        rl_attempt,
-                        base_seconds=float(args.rate_limit_wait_seconds),
-                        max_seconds=float(args.rate_limit_max_delay_seconds),
-                    )
-                    print(
-                        f"Rate limit: waiting {wait_seconds:.1f}s then retrying "
-                        f"({rl_attempt}/{args.max_rate_limit_retries})..."
-                    )
-                    await asyncio.sleep(wait_seconds)
-                except TransientError as exc:
-                    print(f"WARNING: {exc}")
-                    if transient_attempt >= max(0, int(args.max_retries)):
-                        print(f"Giving up on {current_url} after {transient_attempt} transient retries")
-                        break
-                    transient_attempt += 1
-                    wait_seconds = _compute_backoff(
-                        transient_attempt,
-                        base_seconds=float(args.retry_base_delay_seconds),
-                        max_seconds=float(args.retry_max_delay_seconds),
-                    )
-                    print(
-                        f"Transient error: waiting {wait_seconds:.1f}s then retrying "
-                        f"({transient_attempt}/{args.max_retries})..."
-                    )
-                    await asyncio.sleep(wait_seconds)
+                except (RateLimitError, TransientError, RuntimeError) as exc:
+                    # Check if we should try fallback provider
+                    if fallback_provider is not None and not used_fallback:
+                        print(f"⚠️  Primary provider failed: {exc}")
+                        print("🔄 Trying fallback provider (oxylabs)...")
+                        try:
+                            products, snapshots = await scrape_url(
+                                session=session,
+                                url=current_url,
+                                provider=fallback_provider,
+                                args=args,
+                                supermarket_name=(
+                                    _infer_supermarket_name_from_store_name(args.store_name)
+                                    if args.store_name and provider_name != "playwright"
+                                    else None
+                                ),
+                                store_name=args.store_name or None,
+                            )
+                            used_fallback = True
+                            print("✅ Fallback provider succeeded")
+                            break
+                        except Exception as fallback_exc:
+                            print(f"⚠️  Fallback provider also failed: {fallback_exc}")
+                            # Continue with normal retry logic for the primary provider
+                    
+                    # Handle rate limiting
+                    if isinstance(exc, RateLimitError):
+                        print(f"WARNING: {exc}")
+                        if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
+                            rate_limit_hit = True
+                            break
+                        rl_attempt += 1
+                        wait_seconds = _compute_backoff(
+                            rl_attempt,
+                            base_seconds=float(args.rate_limit_wait_seconds),
+                            max_seconds=float(args.rate_limit_max_delay_seconds),
+                        )
+                        print(
+                            f"Rate limit: waiting {wait_seconds:.1f}s then retrying "
+                            f"({rl_attempt}/{args.max_rate_limit_retries})..."
+                        )
+                        await asyncio.sleep(wait_seconds)
+                    # Handle transient errors
+                    elif isinstance(exc, TransientError):
+                        print(f"WARNING: {exc}")
+                        if transient_attempt >= max(0, int(args.max_retries)):
+                            print(f"Giving up on {current_url} after {transient_attempt} transient retries")
+                            break
+                        transient_attempt += 1
+                        wait_seconds = _compute_backoff(
+                            transient_attempt,
+                            base_seconds=float(args.retry_base_delay_seconds),
+                            max_seconds=float(args.retry_max_delay_seconds),
+                        )
+                        print(
+                            f"Transient error: waiting {wait_seconds:.1f}s then retrying "
+                            f"({transient_attempt}/{args.max_retries})..."
+                        )
+                        await asyncio.sleep(wait_seconds)
 
             if rate_limit_hit:
                 break
@@ -3828,16 +3880,15 @@ async def main() -> None:
                 else:
                     write_price_snapshots(price_output_path, all_snapshots)
 
-                if args.persist_db:
-                    maybe_persist_to_database(
-                        args,
-                        provider=provider_name,
-                        mode="scrape",
-                        started_at=run_started_at,
-                        products=all_products,
-                        snapshots=all_snapshots,
-                        categories=discovered_categories_all,
-                    )
+                persist_to_database(
+                    args,
+                    provider=provider_name,
+                    mode="scrape",
+                    started_at=run_started_at,
+                    products=all_products,
+                    snapshots=all_snapshots,
+                    categories=discovered_categories_all,
+                )
 
         merged: dict[str, Product] = {}
         merged_order: list[str] = []
@@ -3869,7 +3920,7 @@ async def main() -> None:
     print(f"Saved {len(all_products)} products to {output_path}")
     print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
 
-    maybe_persist_to_database(
+    persist_to_database(
         args,
         provider=provider_name,
         mode="scrape",
