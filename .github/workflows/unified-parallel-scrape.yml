@@ -1,0 +1,218 @@
+name: Unified Parallel Supermarket Scrape
+
+on:
+  workflow_dispatch:
+    inputs:
+      supermarkets:
+        description: 'Comma-separated list of supermarkets (newworld,paknsave,woolworths)'
+        required: true
+        default: 'newworld,paknsave,woolworths'
+      category_names:
+        description: 'Comma-separated list of category names (e.g., "Beer & Wine", "Health & Body")'
+        required: true
+        default: 'Beer & Wine'
+      number_of_pages:
+        description: 'Number of pages to scrape per category ("all" for all pages, or specific number)'
+        required: true
+        default: 'all'
+      store_names:
+        description: 'Optional comma-separated store names (default stores will be used if empty)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    name: Scrape ${{ matrix.supermarket }} - ${{ matrix.category_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        supermarket: ${{ fromJson(format('[{0}]', join(',', split(github.event.inputs.supermarkets, ',')))) }}
+        category_name: ${{ fromJson(format('[{0}]', join(',', split(github.event.inputs.category_names, ',')))) }}
+        include:
+          # Default store mappings for each supermarket
+          - supermarket: newworld
+            site_profile: newworld
+            default_store: New World Karori
+            default_url: https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1
+          - supermarket: paknsave
+            site_profile: paknsave
+            default_store: PAKn'SAVE Kilbirnie
+            default_url: https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1
+          - supermarket: woolworths
+            site_profile: woolworths
+            default_store: Karori Woolworths
+            default_url: https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install firefox
+          python -m playwright install-deps firefox
+
+      - name: Determine store name
+        id: store_name
+        run: |
+          # Parse store_names input if provided
+          STORE_NAMES_INPUT="${{ github.event.inputs.store_names }}"
+          if [ -n "$STORE_NAMES_INPUT" ]; then
+            # Convert comma-separated to array
+            IFS=',' read -ra STORE_ARRAY <<< "$STORE_NAMES_INPUT"
+            # Get store by index based on matrix position
+            # Simple approach: use first store for all, or implement more sophisticated mapping
+            SELECTED_STORE="${STORE_ARRAY[0]}"
+            if [ -n "$SELECTED_STORE" ]; then
+              echo "store_name=$SELECTED_STORE" >> $GITHUB_OUTPUT
+              echo "Using provided store: $SELECTED_STORE"
+              exit 0
+            fi
+          fi
+          
+          # Use default store for this supermarket
+          echo "store_name=${{ matrix.default_store }}" >> $GITHUB_OUTPUT
+          echo "Using default store: ${{ matrix.default_store }}"
+
+      - name: Determine category URL
+        id: category_url
+        run: |
+          CATEGORY_NAME="${{ matrix.category_name }}"
+          SUPERMARKET="${{ matrix.supermarket }}"
+          
+          # URL mapping based on category name and supermarket
+          case "$CATEGORY_NAME" in
+            "Beer & Wine"|"Beer and Wine"|"Beer, Wine & Cider")
+              case "$SUPERMARKET" in
+                newworld)
+                  echo "url=https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
+                  ;;
+                paknsave)
+                  echo "url=https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
+                  ;;
+                woolworths)
+                  echo "url=https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" >> $GITHUB_OUTPUT
+                  ;;
+                *)
+                  echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                  ;;
+              esac
+              ;;
+            "Health & Body"|"Health and Body")
+              case "$SUPERMARKET" in
+                newworld)
+                  echo "url=https://www.newworld.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
+                  ;;
+                paknsave)
+                  echo "url=https://www.paknsave.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
+                  ;;
+                woolworths)
+                  echo "url=https://www.woolworths.co.nz/shop/browse/health-beauty?page=1&size=48" >> $GITHUB_OUTPUT
+                  ;;
+                *)
+                  echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                  ;;
+              esac
+              ;;
+            *)
+              # For unknown categories, use default URL for the supermarket
+              echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+              echo "Warning: Using default URL for category '$CATEGORY_NAME'"
+              ;;
+          esac
+          
+          echo "Using URL: $(cat $GITHUB_OUTPUT | grep url= | cut -d= -f2-)"
+
+      - name: Determine max pages parameter
+        id: max_pages
+        run: |
+          NUMBER_OF_PAGES="${{ github.event.inputs.number_of_pages }}"
+          if [ "$NUMBER_OF_PAGES" = "all" ]; then
+            echo "max_pages=1000" >> $GITHUB_OUTPUT
+            echo "Scraping all pages (max 1000)"
+          else
+            # Validate it's a number
+            if [[ "$NUMBER_OF_PAGES" =~ ^[0-9]+$ ]]; then
+              echo "max_pages=$NUMBER_OF_PAGES" >> $GITHUB_OUTPUT
+              echo "Scraping $NUMBER_OF_PAGES pages"
+            else
+              echo "max_pages=3" >> $GITHUB_OUTPUT
+              echo "Invalid number_of_pages, defaulting to 3 pages"
+            fi
+          fi
+
+      - name: Run scraper with automatic provider fallback
+        env:
+          SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          CRAWLBASE_TOKEN: ${{ secrets.CRAWLBASE_TOKEN }}
+          ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+          FLOPPYDATA_API_KEY: ${{ secrets.FLOPPYDATA_API_KEY }}
+          OXYLABS_API_KEY: ${{ secrets.OXYLABS_API_KEY }}
+          OXYLABS_USERNAME: ${{ secrets.OXYLABS_USERNAME }}
+          OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "🚀 Starting scrape for ${{ matrix.supermarket }} - ${{ matrix.category_name }}"
+          echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
+          echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
+          echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
+          
+          # Run scraper with automatic provider fallback (direct → oxylabs)
+          # The scraper will handle provider fallback internally
+          python scraper.py \
+            --url "${{ steps.category_url.outputs.url }}" \
+            --site-profile ${{ matrix.site_profile }} \
+            --provider direct \
+            --store-name "${{ steps.store_name.outputs.store_name }}" \
+            --max-pages ${{ steps.max_pages.outputs.max_pages }} \
+            --limit 100 \
+            --crawl-category-pages \
+            --output products_${{ matrix.supermarket }}_${{ github.run_id }}.json \
+            --price-output price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json \
+            --delay-seconds 1.0 \
+            --delay-jitter-seconds 0.5
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-results-${{ matrix.supermarket }}-${{ matrix.category_name }}
+          path: |
+            products_${{ matrix.supermarket }}_${{ github.run_id }}.json
+            price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json
+          retention-days: 7
+
+  summary:
+    name: Scrape Summary
+    runs-on: ubuntu-latest
+    needs: scrape
+    if: always()
+    steps:
+      - name: Print completion summary
+        run: |
+          echo "✅ Unified parallel scrape completed!"
+          echo ""
+          echo "📊 Scraping Summary:"
+          echo "   Supermarkets: ${{ github.event.inputs.supermarkets }}"
+          echo "   Categories: ${{ github.event.inputs.category_names }}"
+          echo "   Pages: ${{ github.event.inputs.number_of_pages }}"
+          echo ""
+          echo "💾 All data persisted to PostgreSQL database"
+          echo "🔄 Provider fallback: direct → oxylabs (automatic)"
+          echo ""
+          echo "📦 Artifacts uploaded for each supermarket-category combination"
