@@ -22,25 +22,26 @@ on:
 
 jobs:
   scrape:
-    name: Scrape ${{ matrix.supermarket }} - ${{ matrix.category_name }}
+    name: Scrape ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        supermarket: ${{ fromJson(format('[{0}]', join(',', split(github.event.inputs.supermarkets, ',')))) }}
-        category_name: ${{ fromJson(format('[{0}]', join(',', split(github.event.inputs.category_names, ',')))) }}
+        # Create explicit matrix entries for each supermarket
         include:
-          # Default store mappings for each supermarket
+          # New World
           - supermarket: newworld
             site_profile: newworld
             default_store: New World Karori
             default_url: https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1
+          # Pak'nSave
           - supermarket: paknsave
             site_profile: paknsave
             default_store: PAKn'SAVE Kilbirnie
             default_url: https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1
+          # Woolworths
           - supermarket: woolworths
             site_profile: woolworths
             default_store: Karori Woolworths
@@ -91,7 +92,7 @@ jobs:
       - name: Determine category URL
         id: category_url
         run: |
-          CATEGORY_NAME="${{ matrix.category_name }}"
+          CATEGORY_NAME="${{ github.event.inputs.category_names }}"
           SUPERMARKET="${{ matrix.supermarket }}"
           
           # URL mapping based on category name and supermarket
@@ -167,7 +168,7 @@ jobs:
           OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          echo "🚀 Starting scrape for ${{ matrix.supermarket }} - ${{ matrix.category_name }}"
+          echo "🚀 Starting scrape for ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}"
           echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
           echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
           echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
@@ -191,7 +192,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-results-${{ matrix.supermarket }}-${{ matrix.category_name }}
+          name: scrape-results-${{ matrix.supermarket }}-${{ github.run_id }}
           path: |
             products_${{ matrix.supermarket }}_${{ github.run_id }}.json
             price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json
