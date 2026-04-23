@@ -3117,6 +3117,10 @@ async def scrape_url(
         err_body = str(error).lower()
         if _is_rate_limited(status, err_title, err_body):
             raise RateLimitError(f"Cloudflare rate limit detected while scraping {url} (Error 1015/429).")
+        if _is_bot_challenge(status, err_title, err_body):
+            raise RateLimitError(
+                f"Bot challenge (HTTP {status}) detected while scraping {url}; triggering provider fallback."
+            )
         _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "unreachable", "eof")
         if any(t in err_body for t in _TRANSIENT_SIGNALS):
             raise TransientError(f"Transient network error for {url}: {error}")
@@ -3134,7 +3138,9 @@ async def scrape_url(
         raise RateLimitError(f"Cloudflare rate limit detected while scraping {url} (Error 1015/429).")
 
     if _is_bot_challenge(status, title, body_preview):
-        print("WARNING: bot challenge detected in response HTML; extraction may be incomplete")
+        raise RateLimitError(
+            f"Bot challenge detected in response for {url}; triggering provider fallback."
+        )
 
     products, snapshots = scrape_products_from_html(
         html=html,
@@ -3716,8 +3722,23 @@ async def main() -> None:
                             print(f"WARNING: {exc}")
                             return []
                         except Exception as exc:
-                            print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
-                            pages = [category_url]
+                            if fallback_provider is not None:
+                                print(f"⚠️  Primary provider failed during pagination discovery for {category_url}: {exc}")
+                                print(f"🔄 Trying fallback provider ({fallback_provider.name}) for pagination discovery...")
+                                try:
+                                    html = await fetch_html_or_raise(
+                                        session=session,
+                                        url=category_url,
+                                        provider=fallback_provider,
+                                    )
+                                    pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
+                                    print(f"✅ Fallback provider succeeded for pagination discovery of {category_url}")
+                                except Exception as fallback_exc:
+                                    print(f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}")
+                                    pages = [category_url]
+                            else:
+                                print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
+                                pages = [category_url]
 
                         print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
                         if args.count_category_pages:
