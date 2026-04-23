@@ -419,7 +419,7 @@ class OxylabsProvider(_BaseProvider):
             payload["geo_location"] = geo_location
         if self.render_wait_ms > 0:
             # Use JavaScript rendering to handle Cloudflare challenges and dynamic content
-            payload["render"] = "html_js"
+            payload["render"] = "html"
         if self.premium_proxy:
             payload["user_agent_type"] = "desktop"
         return payload
@@ -864,8 +864,6 @@ def _normalize_product_name(name: str | None) -> str:
         r"\s+twist\s+cap$",
         r"\s+cork\s+",
         r"\s+cork$",
-        r"\s+bottle\s+",
-        r"\s+bottle$",
     ]
     
     for pattern in remove_patterns:
@@ -1058,6 +1056,15 @@ def _extract_packaging_format(unit_price: str) -> str:
         return value[lower.rfind("per ") + 4 :].strip()
 
     return ""
+
+
+def _strip_unit_from_price_span(span_text: str) -> str:
+    """When a price span contains a unit indicator (e.g. '30 kg'), extract only
+    the leading numeric part ('30') so it can be used as the cents component."""
+    if span_text and re.search(r"\b(kg|g|mg|l|ml|cl)\b", span_text, re.IGNORECASE):
+        numeric_match = re.match(r"^\s*(\d+)", span_text)
+        return numeric_match.group(1) if numeric_match else ""
+    return span_text
 
 
 def _with_page_number(url: str, page_number: int) -> str:
@@ -2959,42 +2966,32 @@ def scrape_products_from_html(
 
         if "woolworths.co.nz" in urlparse(url).netloc.lower():
             # Determine member vs non-member price via productStrap-title badge
-            strap_title_el = _safe_select_one(card, "div .productStrap-title")
+            strap_title_el = _safe_select_one(card, "div .productStrap-title, span.badge, .badge")
             strap_title_text = _clean_text(strap_title_el.get_text(" ", strip=True) if strap_title_el else "")
             is_member_price = bool(re.search(r"\bmember\s+price\b", strap_title_text, re.IGNORECASE))
 
             if is_member_price:
-                # price_cents: price extracted from .noMemberCupPrice (try multiple selectors with fallbacks)
-                no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice.ng-star-inserted")
-                if not no_member_cup_el:
-                    # Fallback 1: try without the .ng-star-inserted class (DOM structure may have changed)
-                    no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice")
-                if not no_member_cup_el:
-                    # Fallback 2: try .previousPrice (alternative selector for regular price)
-                    no_member_cup_el = _safe_select_one(card, ".previousPrice")
-                no_member_cup_text = _clean_text(no_member_cup_el.get_text(" ", strip=True) if no_member_cup_el else "")
-                if not no_member_cup_text:
-                    print(f"ERROR: [member-price] .noMemberCupPrice/.previousPrice selectors all empty for '{name}' at {url}", flush=True)
-                price_re_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", no_member_cup_text)
-                if price_re_match:
-                    price = price_re_match.group(1)
+                # price: non-member product price from .previousPrice
+                previous_price_el = _safe_select_one(card, ".previousPrice")
+                previous_price_text = _clean_text(previous_price_el.get_text(" ", strip=True) if previous_price_el else "")
+                if previous_price_text:
+                    price_re_match = re.search(r"\$\s*(\d+(?:\.\d{1,2})?)", previous_price_text)
+                    if price_re_match:
+                        price = price_re_match.group(1)
+                    else:
+                        price = ""
                 else:
-                    if no_member_cup_text:
-                        print(f"ERROR: [member-price] could not extract price from '{no_member_cup_text}' for '{name}' at {url}", flush=True)
                     price = ""
 
-                # promo_price_cents: member price from .heading--2.presentPrice.priceCupAdjustment em+span (mandatory)
+                # promo_price: member price from .heading--2.presentPrice.priceCupAdjustment,
+                # falling back to the general price extracted from price_selector/price_cents_selector
                 present_price_el = _safe_select_one(card, ".heading--2.presentPrice.priceCupAdjustment")
-                if not present_price_el:
-                    print(f"ERROR: [member-price] .heading--2.presentPrice.priceCupAdjustment not found for '{name}' at {url}", flush=True)
-                    promo_price = ""
-                else:
+                if present_price_el:
                     em_el = present_price_el.find("em")
                     span_el = present_price_el.find("span")
                     em_text = _clean_text(em_el.get_text(" ", strip=True)) if em_el else ""
                     span_text = _clean_text(span_el.get_text(" ", strip=True)) if span_el else ""
-                    if span_text and re.search(r"\b(kg|g|mg|l|ml|cl)\b", span_text, re.IGNORECASE):
-                        span_text = ""
+                    span_text = _strip_unit_from_price_span(span_text)
                     promo_d, promo_c = _extract_price_parts(em_text, span_text)
                     if promo_d and promo_c:
                         promo_price = f"{promo_d}.{promo_c.zfill(2)}"
@@ -3002,42 +2999,58 @@ def scrape_products_from_html(
                         promo_price = promo_d
                     else:
                         print(f"ERROR: [member-price] .heading--2.presentPrice.priceCupAdjustment is empty for '{name}' at {url}", flush=True)
+                        promo_price = f"{price_dollars_clean}.{cleaned_cents.zfill(2)}" if price_dollars_clean and cleaned_cents else price_dollars_clean
+                else:
+                    # Fall back to general price selector (em/span from price_selector/price_cents_selector)
+                    if price_dollars_clean and cleaned_cents:
+                        promo_price = f"{price_dollars_clean}.{cleaned_cents.zfill(2)}"
+                    elif price_dollars_clean:
+                        promo_price = price_dollars_clean
+                    else:
                         promo_price = ""
 
-                # Fallback: if mandatory non-member price is missing, keep logging the error
-                # but persist presentPrice so price_cents is not NULL.
+                # unit_price: non-member unit price extracted from .noMemberCupPrice; keep general if absent
+                no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice.ng-star-inserted")
+                if not no_member_cup_el:
+                    no_member_cup_el = _safe_select_one(card, ".noMemberCupPrice")
+                if no_member_cup_el:
+                    no_member_cup_text = _clean_text(no_member_cup_el.get_text(" ", strip=True))
+                    extracted_unit = _extract_unit_price_text(no_member_cup_text)
+                    if extracted_unit:
+                        unit_price = extracted_unit
+                    # else keep general unit_price (text may be a product price, not a unit price)
+                # else keep general unit_price
+
+                # promo_unit_price: member unit price from .cupPrice; keep general if absent
+                cup_price_el = _safe_select_one(card, ".cupPrice.ng-star-inserted")
+                if not cup_price_el:
+                    cup_price_el = _safe_select_one(card, ".cupPrice")
+                if cup_price_el:
+                    promo_unit_price = _clean_text(cup_price_el.get_text(" ", strip=True))
+                # else keep general promo_unit_price
+
+                # If no non-member unit price was resolved, use the member unit price as fallback
+                if not unit_price:
+                    unit_price = promo_unit_price
+
+                # Fallback: if non-member price is missing but promo price was found, swap them
                 if not price and promo_price:
                     print(
-                        f"WARNING: [member-price] using presentPrice fallback for price_cents for '{name}' at {url}",
+                        f"WARNING: [member-price] using presentPrice fallback for price for '{name}' at {url}",
                         flush=True,
                     )
                     price = promo_price
                     promo_price = ""
 
-                # unit_price_text: full text from .noMemberCupPrice.ng-star-inserted (non-mandatory)
-                unit_price = no_member_cup_text
-                if not unit_price:
-                    print(f"WARNING: [member-price] .noMemberCupPrice.ng-star-inserted is empty (unit_price_text) for '{name}' at {url}", flush=True)
-
-                # promo_unit_price_text: text from .cupPrice.ng-star-inserted (non-mandatory)
-                cup_price_el = _safe_select_one(card, ".cupPrice.ng-star-inserted")
-                promo_unit_price = _clean_text(cup_price_el.get_text(" ", strip=True) if cup_price_el else "")
-                if not promo_unit_price:
-                    print(f"WARNING: [member-price] .cupPrice.ng-star-inserted is empty (promo_unit_price_text) for '{name}' at {url}", flush=True)
-
             else:
-                # price_cents: price from .heading--2.presentPrice.priceCupAdjustment em+span (mandatory)
+                # price: from .heading--2.presentPrice.priceCupAdjustment em+span; keep general if absent
                 present_price_el = _safe_select_one(card, ".heading--2.presentPrice.priceCupAdjustment")
-                if not present_price_el:
-                    print(f"ERROR: [non-member] .heading--2.presentPrice.priceCupAdjustment not found for '{name}' at {url}", flush=True)
-                    price = ""
-                else:
+                if present_price_el:
                     em_el = present_price_el.find("em")
                     span_el = present_price_el.find("span")
                     em_text = _clean_text(em_el.get_text(" ", strip=True)) if em_el else ""
                     span_text = _clean_text(span_el.get_text(" ", strip=True)) if span_el else ""
-                    if span_text and re.search(r"\b(kg|g|mg|l|ml|cl)\b", span_text, re.IGNORECASE):
-                        span_text = ""
+                    span_text = _strip_unit_from_price_span(span_text)
                     reg_d, reg_c = _extract_price_parts(em_text, span_text)
                     if reg_d and reg_c:
                         price = f"{reg_d}.{reg_c.zfill(2)}"
@@ -3045,18 +3058,30 @@ def scrape_products_from_html(
                         price = reg_d
                     else:
                         print(f"ERROR: [non-member] .heading--2.presentPrice.priceCupAdjustment is empty for '{name}' at {url}", flush=True)
-                        price = ""
+                        # Keep general price as fallback
+                else:
+                    print(f"ERROR: [non-member] .heading--2.presentPrice.priceCupAdjustment not found for '{name}' at {url}", flush=True)
+                    # Keep general price (don't overwrite with "")
 
-                # promo_price_cents: empty for non-member products
+                # promo_price: empty for non-member products
                 promo_price = ""
 
-                # unit_price_text: text from .cupPrice.ng-star-inserted (non-mandatory)
+                # unit_price: from .cupPrice (with or without .ng-star-inserted); keep general if absent
                 cup_price_el = _safe_select_one(card, ".cupPrice.ng-star-inserted")
-                unit_price = _clean_text(cup_price_el.get_text(" ", strip=True) if cup_price_el else "")
-                if not unit_price:
-                    print(f"WARNING: [non-member] .cupPrice.ng-star-inserted is empty (unit_price_text) for '{name}' at {url}", flush=True)
+                if not cup_price_el:
+                    cup_price_el = _safe_select_one(card, ".cupPrice")
+                if cup_price_el:
+                    extracted = _clean_text(cup_price_el.get_text(" ", strip=True))
+                    if extracted:
+                        unit_price = extracted
+                    else:
+                        print(f"WARNING: [non-member] .cupPrice is empty (unit_price_text) for '{name}' at {url}", flush=True)
+                        # Keep general unit_price
+                else:
+                    print(f"WARNING: [non-member] .cupPrice not found (unit_price_text) for '{name}' at {url}", flush=True)
+                    # Keep general unit_price (don't overwrite with "")
 
-                # promo_unit_price_text: empty for non-member products
+                # promo_unit_price: empty for non-member products
                 promo_unit_price = ""
 
         if not name or _looks_like_price_only_name(name):
@@ -3071,7 +3096,7 @@ def scrape_products_from_html(
         normalized_name = _normalize_product_name(name)
         
         packaging_format = (
-            _extract_packaging_from_name(normalized_name)
+            _extract_packaging_from_name(name)
             or _extract_packaging_from_name(subtitle)
             or _extract_packaging_format(unit_price)
         )
@@ -3117,6 +3142,10 @@ async def scrape_url(
         err_body = str(error).lower()
         if _is_rate_limited(status, err_title, err_body):
             raise RateLimitError(f"Cloudflare rate limit detected while scraping {url} (Error 1015/429).")
+        if _is_bot_challenge(status, err_title, err_body):
+            raise RateLimitError(
+                f"Bot challenge (HTTP {status}) detected while scraping {url}; triggering provider fallback."
+            )
         _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "unreachable", "eof")
         if any(t in err_body for t in _TRANSIENT_SIGNALS):
             raise TransientError(f"Transient network error for {url}: {error}")
@@ -3134,7 +3163,9 @@ async def scrape_url(
         raise RateLimitError(f"Cloudflare rate limit detected while scraping {url} (Error 1015/429).")
 
     if _is_bot_challenge(status, title, body_preview):
-        print("WARNING: bot challenge detected in response HTML; extraction may be incomplete")
+        raise RateLimitError(
+            f"Bot challenge detected in response for {url}; triggering provider fallback."
+        )
 
     products, snapshots = scrape_products_from_html(
         html=html,
@@ -3716,8 +3747,23 @@ async def main() -> None:
                             print(f"WARNING: {exc}")
                             return []
                         except Exception as exc:
-                            print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
-                            pages = [category_url]
+                            if fallback_provider is not None:
+                                print(f"⚠️  Primary provider failed during pagination discovery for {category_url}: {exc}")
+                                print(f"🔄 Trying fallback provider ({fallback_provider.name}) for pagination discovery...")
+                                try:
+                                    html = await fetch_html_or_raise(
+                                        session=session,
+                                        url=category_url,
+                                        provider=fallback_provider,
+                                    )
+                                    pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
+                                    print(f"✅ Fallback provider succeeded for pagination discovery of {category_url}")
+                                except Exception as fallback_exc:
+                                    print(f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}")
+                                    pages = [category_url]
+                            else:
+                                print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
+                                pages = [category_url]
 
                         print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
                         if args.count_category_pages:
