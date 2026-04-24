@@ -2,6 +2,9 @@ name: Unified Parallel Supermarket Scrape
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
     inputs:
       supermarkets:
         description: 'Comma-separated list of supermarkets (newworld,paknsave,woolworths)'
@@ -21,31 +24,56 @@ on:
         default: ''
 
 jobs:
+  setup:
+    name: Setup Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Generate dynamic matrix from supermarkets input
+        id: set-matrix
+        run: |
+          SUPERMARKETS="${{ github.event.inputs.supermarkets }}"
+
+          # Configuration map for each supermarket
+          declare -A SITE_PROFILE=( [newworld]="newworld" [paknsave]="paknsave" [woolworths]="woolworths" )
+          declare -A DEFAULT_STORE=( [newworld]="New World Karori" [paknsave]="PAKn'SAVE Kilbirnie" [woolworths]="Karori Woolworths" )
+          declare -A DEFAULT_URL=(
+            [newworld]="https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1"
+            [paknsave]="https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1"
+            [woolworths]="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48"
+          )
+
+          INCLUDES="[]"
+          IFS=',' read -ra SM_LIST <<< "$SUPERMARKETS"
+          for SM in "${SM_LIST[@]}"; do
+            SM="$(echo "$SM" | tr -d '[:space:]')"
+            if [ -z "${SITE_PROFILE[$SM]+x}" ]; then
+              echo "::warning::Unknown supermarket '$SM' — skipping"
+              continue
+            fi
+            ENTRY=$(jq -n \
+              --arg supermarket "$SM" \
+              --arg site_profile "${SITE_PROFILE[$SM]}" \
+              --arg default_store "${DEFAULT_STORE[$SM]}" \
+              --arg default_url "${DEFAULT_URL[$SM]}" \
+              '{supermarket: $supermarket, site_profile: $site_profile, default_store: $default_store, default_url: $default_url}')
+            INCLUDES=$(echo "$INCLUDES" | jq --argjson entry "$ENTRY" '. + [$entry]')
+          done
+
+          MATRIX=$(jq -n --argjson include "$INCLUDES" '{include: $include}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Generated matrix: $MATRIX"
+
   scrape:
     name: Scrape ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: setup
     strategy:
       fail-fast: false
       max-parallel: 3
-      matrix:
-        # Create explicit matrix entries for each supermarket
-        include:
-          # New World
-          - supermarket: newworld
-            site_profile: newworld
-            default_store: New World Karori
-            default_url: https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1
-          # Pak'nSave
-          - supermarket: paknsave
-            site_profile: paknsave
-            default_store: PAKn'SAVE Kilbirnie
-            default_url: https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1
-          # Woolworths
-          - supermarket: woolworths
-            site_profile: woolworths
-            default_store: Karori Woolworths
-            default_url: https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
@@ -231,7 +259,7 @@ jobs:
   summary:
     name: Scrape Summary
     runs-on: ubuntu-latest
-    needs: scrape
+    needs: [setup, scrape]
     if: always()
     steps:
       - name: Print completion summary
