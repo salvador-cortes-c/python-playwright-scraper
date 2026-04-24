@@ -3829,14 +3829,16 @@ async def main() -> None:
             rl_attempt = 0
             transient_attempt = 0
             products, snapshots = [], []
-            used_fallback = False
+            switched_to_fallback = False
 
             while True:
+                active_provider = fallback_provider if switched_to_fallback else provider
+                active_label = "oxylabs (fallback)" if switched_to_fallback else provider_name
                 try:
                     products, snapshots = await scrape_url(
                         session=session,
                         url=current_url,
-                        provider=provider,
+                        provider=active_provider,
                         args=args,
                         supermarket_name=(
                             _infer_supermarket_name_from_store_name(args.store_name)
@@ -3845,54 +3847,37 @@ async def main() -> None:
                         ),
                         store_name=args.store_name or None,
                     )
+                    if switched_to_fallback:
+                        print("✅ Fallback provider succeeded")
                     break
                 except (RateLimitError, TransientError, RuntimeError) as exc:
-                    # Check if we should try fallback provider
-                    if fallback_provider is not None and not used_fallback:
+                    # Rate limit / bot challenge on primary: switch to fallback immediately
+                    if isinstance(exc, RateLimitError) and not switched_to_fallback and fallback_provider is not None:
                         print(f"⚠️  Primary provider failed: {exc}")
-                        print("🔄 Trying fallback provider (oxylabs)...")
-                        try:
-                            products, snapshots = await scrape_url(
-                                session=session,
-                                url=current_url,
-                                provider=fallback_provider,
-                                args=args,
-                                supermarket_name=(
-                                    _infer_supermarket_name_from_store_name(args.store_name)
-                                    if args.store_name and provider_name != "playwright"
-                                    else None
-                                ),
-                                store_name=args.store_name or None,
-                            )
-                            used_fallback = True
-                            print("✅ Fallback provider succeeded")
-                            break
-                        except Exception as fallback_exc:
-                            print(f"⚠️  Fallback provider also failed: {fallback_exc}")
-                            # Continue with normal retry logic for the primary provider
-                    
-                    # Handle rate limiting
-                    if isinstance(exc, RateLimitError):
-                        print(f"WARNING: {exc}")
-                        if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
-                            rate_limit_hit = True
-                            break
-                        rl_attempt += 1
-                        wait_seconds = _compute_backoff(
-                            rl_attempt,
-                            base_seconds=float(args.rate_limit_wait_seconds),
-                            max_seconds=float(args.rate_limit_max_delay_seconds),
-                        )
-                        print(
-                            f"Rate limit: waiting {wait_seconds:.1f}s then retrying "
-                            f"({rl_attempt}/{args.max_rate_limit_retries})..."
-                        )
-                        await asyncio.sleep(wait_seconds)
-                    # Handle transient errors
-                    elif isinstance(exc, TransientError):
-                        print(f"WARNING: {exc}")
+                        print("🔄 Switching to fallback provider (oxylabs)...")
+                        switched_to_fallback = True
+                        transient_attempt = 0
+                        rl_attempt = 0
+                        continue
+
+                    # Transient error: retry current provider with exponential backoff,
+                    # then fall back to oxylabs once primary retries are exhausted
+                    if isinstance(exc, TransientError):
+                        print(f"WARNING: [{active_label}] {exc}")
                         if transient_attempt >= max(0, int(args.max_retries)):
-                            print(f"Giving up on {current_url} after {transient_attempt} transient retries")
+                            if not switched_to_fallback and fallback_provider is not None:
+                                print(
+                                    f"⚠️  Primary provider exhausted {transient_attempt} retries, "
+                                    f"switching to fallback provider (oxylabs)..."
+                                )
+                                switched_to_fallback = True
+                                transient_attempt = 0
+                                rl_attempt = 0
+                                continue
+                            print(
+                                f"Giving up on {current_url} after {transient_attempt} "
+                                f"transient retries [{active_label}]"
+                            )
                             break
                         transient_attempt += 1
                         wait_seconds = _compute_backoff(
@@ -3901,10 +3886,43 @@ async def main() -> None:
                             max_seconds=float(args.retry_max_delay_seconds),
                         )
                         print(
-                            f"Transient error: waiting {wait_seconds:.1f}s then retrying "
+                            f"Transient error [{active_label}]: waiting {wait_seconds:.1f}s then retrying "
                             f"({transient_attempt}/{args.max_retries})..."
                         )
                         await asyncio.sleep(wait_seconds)
+                    # Rate limit on fallback, or rate limit on primary with no fallback
+                    elif isinstance(exc, RateLimitError):
+                        print(f"WARNING: [{active_label}] {exc}")
+                        if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
+                            if switched_to_fallback:
+                                print(
+                                    f"Giving up on {current_url}: fallback provider also rate limited "
+                                    f"after {rl_attempt} retries"
+                                )
+                            else:
+                                rate_limit_hit = True
+                            break
+                        rl_attempt += 1
+                        wait_seconds = _compute_backoff(
+                            rl_attempt,
+                            base_seconds=float(args.rate_limit_wait_seconds),
+                            max_seconds=float(args.rate_limit_max_delay_seconds),
+                        )
+                        print(
+                            f"Rate limit [{active_label}]: waiting {wait_seconds:.1f}s then retrying "
+                            f"({rl_attempt}/{args.max_rate_limit_retries})..."
+                        )
+                        await asyncio.sleep(wait_seconds)
+                    # RuntimeError or other unexpected failure
+                    else:
+                        print(f"ERROR: [{active_label}] {exc}")
+                        if not switched_to_fallback and fallback_provider is not None:
+                            print("🔄 Switching to fallback provider (oxylabs)...")
+                            switched_to_fallback = True
+                            transient_attempt = 0
+                            rl_attempt = 0
+                            continue
+                        break
 
             if rate_limit_hit:
                 break
