@@ -52,16 +52,16 @@ jobs:
               echo "::warning::Unknown supermarket '$SM' — skipping"
               continue
             fi
-            ENTRY=$(jq -n \
+            ENTRY=$(jq -c -n \
               --arg supermarket "$SM" \
               --arg site_profile "${SITE_PROFILE[$SM]}" \
               --arg default_store "${DEFAULT_STORE[$SM]}" \
               --arg default_url "${DEFAULT_URL[$SM]}" \
               '{supermarket: $supermarket, site_profile: $site_profile, default_store: $default_store, default_url: $default_url}')
-            INCLUDES=$(echo "$INCLUDES" | jq --argjson entry "$ENTRY" '. + [$entry]')
+            INCLUDES=$(echo "$INCLUDES" | jq -c --argjson entry "$ENTRY" '. + [$entry]')
           done
 
-          MATRIX=$(jq -n --argjson include "$INCLUDES" '{include: $include}')
+          MATRIX=$(jq -c -n --argjson include "$INCLUDES" '{include: $include}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "Generated matrix: $MATRIX"
 
