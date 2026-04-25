@@ -80,6 +80,10 @@ def _looks_like_price_only_name(value: str | None) -> bool:
     return bool(_PRICE_ONLY_NAME_RE.fullmatch(cleaned))
 
 
+_PACK_COUNT_RE = re.compile(r"^(\d+)\s*pack$", re.IGNORECASE)
+_PLAIN_SIZE_RE = re.compile(r"^\d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl|ea)$", re.IGNORECASE)
+
+
 def _extract_packaging_from_name(name: str | None) -> str:
     value = " ".join(str(name or "").split()).strip()
     if not value:
@@ -88,6 +92,19 @@ def _extract_packaging_from_name(name: str | None) -> str:
     matches = list(_PACKAGING_IN_NAME_RE.finditer(value))
     if not matches:
         return ""
+
+    # When the last two consecutive matches are "N pack" followed by a plain
+    # size (e.g. "10 pack 330mL"), combine them into "NxNNNml" so that
+    # different multi-pack variants get distinct keys.  Without this, every
+    # pack size collapses to the same packaging_format ("330mL").
+    if len(matches) >= 2:
+        last_tok = " ".join(matches[-1].group(1).split())
+        prev_tok = " ".join(matches[-2].group(1).split())
+        pack_m = _PACK_COUNT_RE.fullmatch(prev_tok)
+        size_m = _PLAIN_SIZE_RE.fullmatch(last_tok)
+        if pack_m and size_m:
+            size = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", last_tok, flags=re.IGNORECASE)
+            return f"{pack_m.group(1)}x{size.strip()}"
 
     packaging = " ".join(matches[-1].group(1).split()).strip()
     packaging = re.sub(r"\s*[x×]\s*", "x", packaging)
@@ -113,6 +130,26 @@ def _normalize_name_for_key(name: str) -> str:
     return result
 
 
+def _normalize_packaging(packaging: str) -> str:
+    """Normalize a packaging string for use in a product key.
+
+    Applies the same transformations as :func:`_extract_packaging_from_name` so
+    that explicitly-provided packaging values ("6 x 330ml" or "6 pack 330mL")
+    produce the same key component as inferred ones ("6x330ml").
+    """
+    result = " ".join(packaging.split()).strip()
+    # Convert "N pack NNNml" → "NxNNNml" (Woolworths subtitle format)
+    result = re.sub(
+        r"^(\d+)\s*pack\s+(\d+(?:\.\d+)?)\s*(kg|g|mg|l|ml|cl|ea)\b.*$",
+        lambda m: f"{m.group(1)}x{m.group(2)}{m.group(3)}",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(r"\s*[x×]\s*", "x", result)
+    result = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", result, flags=re.IGNORECASE)
+    return result.strip()
+
+
 def _normalize_product_record(
     product_key: str | None,
     name: str | None,
@@ -125,6 +162,8 @@ def _normalize_product_record(
     clean_packaging = " ".join(str(packaging_format or "").split()).strip()
     if not clean_packaging:
         clean_packaging = _extract_packaging_from_name(clean_name)
+    else:
+        clean_packaging = _normalize_packaging(clean_packaging)
 
     key_name = _normalize_name_for_key(clean_name)
     clean_key = f"{key_name}_{clean_packaging.lower()}" if clean_packaging else key_name

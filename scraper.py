@@ -774,6 +774,9 @@ _PACKAGING_IN_NAME_RE = re.compile(
     """
 )
 
+_PACK_COUNT_RE = re.compile(r"^(\d+)\s*pack$", re.IGNORECASE)
+_PLAIN_SIZE_RE = re.compile(r"^\d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|cl|ea)$", re.IGNORECASE)
+
 _MEMBER_PRICE_BADGE_RE = re.compile(r"\bmember\s+price\b", re.IGNORECASE)
 _NON_MEMBER_PRICE_RE = re.compile(r"non[-\s]*member\s*\$?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
 _NON_MEMBER_UNIT_PRICE_RE = re.compile(
@@ -801,6 +804,19 @@ def _extract_packaging_from_name(name: str | None) -> str:
     matches = list(_PACKAGING_IN_NAME_RE.finditer(value))
     if not matches:
         return ""
+
+    # When the last two consecutive matches are "N pack" followed by a plain
+    # size (e.g. "10 pack 330mL"), combine them into "NxNNNml" so that
+    # different multi-pack variants get distinct keys.  Without this, every
+    # pack size collapses to the same packaging_format ("330mL").
+    if len(matches) >= 2:
+        last_tok = _clean_text(matches[-1].group(1))
+        prev_tok = _clean_text(matches[-2].group(1))
+        pack_m = _PACK_COUNT_RE.fullmatch(prev_tok)
+        size_m = _PLAIN_SIZE_RE.fullmatch(last_tok)
+        if pack_m and size_m:
+            size = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", last_tok, flags=re.IGNORECASE)
+            return f"{pack_m.group(1)}x{size.strip()}"
 
     packaging = _clean_text(matches[-1].group(1))
     packaging = re.sub(r"\s*[x×]\s*", "x", packaging)
