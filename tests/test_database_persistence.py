@@ -136,6 +136,64 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertEqual(_normalize_packaging("1.5 l"), "1.5l")
         self.assertEqual(_normalize_packaging("500g"), "500g")
 
+    def test_extract_packaging_from_name_combines_pack_count_and_size(self):
+        """'N pack NNNml' subtitle should yield 'NxNNNml', not just 'NNNml'.
+
+        Woolworths NZ renders multi-pack variants as subtitles like '10 pack 330mL'.
+        Without combining the pack count, every variant collapses to '330mL' and
+        the database stores only one row instead of a distinct row per pack size.
+        """
+        from database import _extract_packaging_from_name
+        self.assertEqual(_extract_packaging_from_name("10 pack 330mL"), "10x330mL")
+        self.assertEqual(_extract_packaging_from_name("6 pack 330mL"), "6x330mL")
+        self.assertEqual(_extract_packaging_from_name("15 pack 330mL"), "15x330mL")
+        # Existing "NxNNNml" format must be unchanged
+        self.assertEqual(_extract_packaging_from_name("6x330mL"), "6x330mL")
+        self.assertEqual(_extract_packaging_from_name("10x330mL"), "10x330mL")
+        # Plain size (no pack count) must still work
+        self.assertEqual(_extract_packaging_from_name("330mL"), "330mL")
+        # "12 x 330mL" (explicit multiplier notation) must still work
+        self.assertEqual(_extract_packaging_from_name("12 x 330mL"), "12x330mL")
+
+    def test_woolworths_laid_back_lager_variants_get_distinct_keys(self):
+        """Woolworths Karori lists multiple 'Laid Back Lager' pack sizes under the
+        same product name with the pack count only in the subtitle.  Each variant
+        must get a distinct product_key so all variants are stored in the DB and
+        shown in the UI — not collapsed into a single row."""
+        six_pack = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid Back Lager",
+            "6 pack 330mL",
+        )
+        ten_pack = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid Back Lager",
+            "10 pack 330mL",
+        )
+        fifteen_pack = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid Back Lager",
+            "15 pack 330mL",
+        )
+
+        self.assertIsNotNone(six_pack)
+        self.assertIsNotNone(ten_pack)
+        self.assertIsNotNone(fifteen_pack)
+
+        six_key, _, six_fmt = six_pack
+        ten_key, _, ten_fmt = ten_pack
+        fifteen_key, _, fifteen_fmt = fifteen_pack
+
+        # All three must be distinct keys
+        self.assertNotEqual(six_key, ten_key, "6-pack and 10-pack must have distinct product_keys")
+        self.assertNotEqual(ten_key, fifteen_key, "10-pack and 15-pack must have distinct product_keys")
+        self.assertNotEqual(six_key, fifteen_key, "6-pack and 15-pack must have distinct product_keys")
+
+        # Packaging format must reflect the full pack count, not just per-can size
+        self.assertEqual(six_fmt, "6x330mL")
+        self.assertEqual(ten_fmt, "10x330mL")
+        self.assertEqual(fifteen_fmt, "15x330mL")
+
     def test_cross_supermarket_explicit_vs_inferred_packaging_produces_same_key(self):
         """When one supermarket provides explicit packaging and another has the packaging
         only in the product name, both should produce the same product_key so that
