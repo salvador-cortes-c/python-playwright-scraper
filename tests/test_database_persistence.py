@@ -10,6 +10,7 @@ from database import (
     _find_category_id_for_source_url,
     _infer_supermarket_name,
     _normalize_product_record,
+    _parse_price_to_cents,
     _snapshot_store_name,
     dedupe_price_snapshots,
 )
@@ -307,6 +308,127 @@ class DatabasePersistenceTests(unittest.TestCase):
         )
 
         self.assertIsNone(category_id)
+
+    def test_parse_price_to_cents_converts_valid_price(self):
+        self.assertEqual(_parse_price_to_cents("12.99"), 1299)
+        self.assertEqual(_parse_price_to_cents("$5.00"), 500)
+        self.assertEqual(_parse_price_to_cents("0.99"), 99)
+
+    def test_parse_price_to_cents_returns_none_for_invalid_input(self):
+        self.assertIsNone(_parse_price_to_cents(None))
+        self.assertIsNone(_parse_price_to_cents(""))
+        self.assertIsNone(_parse_price_to_cents("not-a-price"))
+
+    def test_scrape_products_clears_promo_price_when_equal_to_price(self):
+        from scraper import scrape_products_from_html
+
+        html = """
+        <div data-testid="product-1-EA-000">
+          <p data-testid="product-title">Test Beer 330ml</p>
+          <img data-testid="product-image" src="/img.png" />
+          <p data-testid="price-dollars">10</p>
+          <p data-testid="price-cents">00</p>
+          <p data-testid="promo-dollars">10</p>
+          <p data-testid="promo-cents">00</p>
+          <p data-testid="non-promo-unit-price"></p>
+        </div>
+        """
+
+        _, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.paknsave.co.nz/shop/category/beer?pg=1",
+            product_selector="div[data-testid^='product-'][data-testid$='-000']",
+            name_selector="[data-testid='product-title']",
+            price_selector="[data-testid='price-dollars']",
+            price_cents_selector="[data-testid='price-cents']",
+            unit_price_selector="[data-testid='non-promo-unit-price']",
+            promo_price_dollars_selector="[data-testid='promo-dollars']",
+            promo_price_cents_selector="[data-testid='promo-cents']",
+            promo_unit_price_selector="",
+            image_selector="[data-testid='product-image']",
+            limit=10,
+            query=None,
+            supermarket_name="Pak'nSave",
+            store_name="PAKn'SAVE Kilbirnie",
+        )
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].price, "10.00")
+        self.assertEqual(snapshots[0].promo_price, "")
+
+    def test_scrape_products_clears_promo_price_when_greater_than_price(self):
+        from scraper import scrape_products_from_html
+
+        html = """
+        <div data-testid="product-2-EA-000">
+          <p data-testid="product-title">Test Wine 750ml</p>
+          <img data-testid="product-image" src="/img.png" />
+          <p data-testid="price-dollars">15</p>
+          <p data-testid="price-cents">00</p>
+          <p data-testid="promo-dollars">20</p>
+          <p data-testid="promo-cents">00</p>
+          <p data-testid="non-promo-unit-price"></p>
+        </div>
+        """
+
+        _, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.paknsave.co.nz/shop/category/wine?pg=1",
+            product_selector="div[data-testid^='product-'][data-testid$='-000']",
+            name_selector="[data-testid='product-title']",
+            price_selector="[data-testid='price-dollars']",
+            price_cents_selector="[data-testid='price-cents']",
+            unit_price_selector="[data-testid='non-promo-unit-price']",
+            promo_price_dollars_selector="[data-testid='promo-dollars']",
+            promo_price_cents_selector="[data-testid='promo-cents']",
+            promo_unit_price_selector="",
+            image_selector="[data-testid='product-image']",
+            limit=10,
+            query=None,
+            supermarket_name="Pak'nSave",
+            store_name="PAKn'SAVE Kilbirnie",
+        )
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].price, "15.00")
+        self.assertEqual(snapshots[0].promo_price, "")
+
+    def test_scrape_products_keeps_valid_promo_price_lower_than_price(self):
+        from scraper import scrape_products_from_html
+
+        html = """
+        <div data-testid="product-3-EA-000">
+          <p data-testid="product-title">Test Cider 330ml</p>
+          <img data-testid="product-image" src="/img.png" />
+          <p data-testid="price-dollars">12</p>
+          <p data-testid="price-cents">99</p>
+          <p data-testid="promo-dollars">9</p>
+          <p data-testid="promo-cents">99</p>
+          <p data-testid="non-promo-unit-price"></p>
+        </div>
+        """
+
+        _, snapshots = scrape_products_from_html(
+            html=html,
+            url="https://www.paknsave.co.nz/shop/category/cider?pg=1",
+            product_selector="div[data-testid^='product-'][data-testid$='-000']",
+            name_selector="[data-testid='product-title']",
+            price_selector="[data-testid='price-dollars']",
+            price_cents_selector="[data-testid='price-cents']",
+            unit_price_selector="[data-testid='non-promo-unit-price']",
+            promo_price_dollars_selector="[data-testid='promo-dollars']",
+            promo_price_cents_selector="[data-testid='promo-cents']",
+            promo_unit_price_selector="",
+            image_selector="[data-testid='product-image']",
+            limit=10,
+            query=None,
+            supermarket_name="Pak'nSave",
+            store_name="PAKn'SAVE Kilbirnie",
+        )
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].price, "12.99")
+        self.assertEqual(snapshots[0].promo_price, "9.99")
 
 
 if __name__ == "__main__":
