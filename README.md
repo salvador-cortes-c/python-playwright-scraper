@@ -334,7 +334,7 @@ These CSS selectors are auto-filled from the active retailer profile (`newworld`
 | Flag | Default | Description |
 |---|---|---|
 | `--limit N` | `20` | Maximum products to extract per URL. |
-| `--max-pages N` | unlimited | Stop after scraping this many resolved page URLs in total. |
+| `--max-pages N` | unlimited | Stop after scraping this many resolved page URLs in total. Pass `all` (or omit) to scrape every discovered page. |
 | `--count-only` | off | Resolve category/pagination URLs and print the total without scraping product pages. Useful as a preflight check before long runs. |
 | `--count-category-pages` | off | Discover categories, resolve pagination for each one, print a per-category page count, and exit. Implies `--count-only`. |
 | `--query TEXT` | none | Keep only products whose name contains this string (case-insensitive). |
@@ -510,9 +510,18 @@ The workflow `.github/workflows/unified-parallel-scrape.yml` supports scraping m
 | Input | Description |
 |---|---|
 | `supermarkets` | Comma-separated list: `newworld,paknsave,woolworths` |
-| `category_names` | Category to scrape, e.g. `Beer & Wine` |
-| `number_of_pages` | Number of pages per category (`all` for unlimited) |
+| `category_names` | Category to scrape, e.g. `Beer & Wine`. Set to **`all`** to discover and scrape every available category for each supermarket. |
+| `number_of_pages` | Number of pages per category. Set to **`all`** to iterate through every paginated page for each category (no cap). Accepts a positive integer for an explicit limit. |
 | `store_names` | Optional override for the store name |
+
+**Using `all` for `category_names`:** when set, the workflow navigates to each supermarket's discovery URL, uses `--discover-category-urls` to enumerate every available top-level category, and then crawls all their pages. This is equivalent to a full-coverage scrape.
+
+**Using `all` for `number_of_pages`:** when set, `--max-pages` is passed the string `all` to the scraper, which removes any page cap and iterates every paginated URL discovered for each category.
+
+**Examples:**
+- Full coverage scrape: `category_names=all`, `number_of_pages=all`
+- Single category, all pages: `category_names=Beer & Wine`, `number_of_pages=all`
+- Single category, first 3 pages: `category_names=Beer & Wine`, `number_of_pages=3`
 
 Each supermarket job uses the `direct` provider with automatic Oxylabs fallback.  Results are uploaded as artifacts (`scrape-results-<supermarket>-<run_id>`) retained for 7 days.
 

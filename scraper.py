@@ -2728,7 +2728,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 completed_set = set(progress.completed_urls) if args.resume else set()
                 targets = [current for current in to_scrape if current not in completed_set]
                 if args.max_pages is not None:
-                    targets = targets[: max(0, int(args.max_pages))]
+                    targets = targets[: max(0, args.max_pages)]
                 if args.resume:
                     print(f"Resume enabled: skipping {len(to_scrape) - len(targets)} already-completed URLs")
 
@@ -3245,6 +3245,19 @@ async def fetch_html_or_raise(
     return html
 
 
+def _parse_max_pages(value: str) -> int | None:
+    """Argparse type for --max-pages: accepts a positive integer or the string 'all' (no cap)."""
+    if value.strip().lower() == "all":
+        return None
+    try:
+        n = int(value)
+        if n < 1:
+            raise argparse.ArgumentTypeError("--max-pages must be a positive integer (≥ 1) or 'all'")
+        return n
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--max-pages must be a positive integer or 'all', got: {value!r}")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape NZ supermarket products")
     parser.add_argument(
@@ -3323,9 +3336,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--max-pages",
-        type=int,
+        type=_parse_max_pages,
         default=None,
-        help="Maximum number of resolved URLs (pages) to scrape.",
+        help="Maximum number of resolved URLs (pages) to scrape. Pass 'all' to scrape every page without a cap.",
     )
     parser.add_argument(
         "--count-only",
@@ -3848,7 +3861,7 @@ async def main() -> None:
         completed_set = set(progress.completed_urls) if args.resume else set()
         targets = [url for url in resolved_urls if url not in completed_set]
         if args.max_pages is not None:
-            targets = targets[: max(0, int(args.max_pages))]
+            targets = targets[: max(0, args.max_pages)]
         if args.resume:
             skipped = len(resolved_urls) - len(targets)
             print(f"Resume enabled: skipping {skipped} already-completed URLs")
