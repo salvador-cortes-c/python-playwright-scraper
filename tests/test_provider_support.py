@@ -4,7 +4,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper import build_provider
+from scraper import (
+    RateLimitError,
+    TransientError,
+    _compute_backoff,
+    build_provider,
+)
 
 
 class _FakeResponse:
@@ -132,6 +137,63 @@ class ProviderSupportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["json"]["user_agent_type"], "desktop")
         self.assertEqual(kwargs["auth"].login, "user")
         self.assertEqual(kwargs["auth"].password, "pass")
+
+    def test_build_provider_supports_direct_without_api_key(self):
+        provider = build_provider(
+            provider_name="direct",
+            api_key=None,
+            render_wait_ms=3000,
+            country_code="nz",
+            premium_proxy=False,
+        )
+
+        self.assertEqual(provider.name, "direct")
+
+    def test_build_provider_raises_for_unknown_provider(self):
+        with self.assertRaisesRegex(ValueError, "Unknown provider"):
+            build_provider(
+                provider_name="unknown_provider",
+                api_key="key",
+                render_wait_ms=3000,
+                country_code="nz",
+                premium_proxy=False,
+            )
+
+
+class ErrorClassTests(unittest.TestCase):
+    def test_rate_limit_error_is_runtime_error_subclass(self):
+        err = RateLimitError("HTTP 429")
+        self.assertIsInstance(err, RuntimeError)
+        self.assertEqual(str(err), "HTTP 429")
+
+    def test_transient_error_is_runtime_error_subclass(self):
+        err = TransientError("connection reset")
+        self.assertIsInstance(err, RuntimeError)
+        self.assertEqual(str(err), "connection reset")
+
+    def test_rate_limit_error_and_transient_error_are_distinct(self):
+        self.assertFalse(issubclass(RateLimitError, TransientError))
+        self.assertFalse(issubclass(TransientError, RateLimitError))
+
+
+class BackoffTests(unittest.TestCase):
+    def test_compute_backoff_first_attempt_is_close_to_base(self):
+        """Attempt 1: delay should be between base * 0.75 and base * 2 * 1.25 (one doubling + full jitter)."""
+        for _ in range(20):
+            result = _compute_backoff(attempt=1, base_seconds=5.0, max_seconds=120.0)
+            self.assertGreaterEqual(result, 5.0 * 0.75)
+            self.assertLessEqual(result, 5.0 * 2 * 1.25)
+
+    def test_compute_backoff_caps_at_max_seconds(self):
+        """Very high attempt count should not exceed max_seconds * 1.25 (jitter ceiling)."""
+        for _ in range(20):
+            result = _compute_backoff(attempt=100, base_seconds=5.0, max_seconds=60.0)
+            self.assertLessEqual(result, 60.0 * 1.25)
+
+    def test_compute_backoff_returns_positive_value(self):
+        for attempt in range(5):
+            result = _compute_backoff(attempt=attempt, base_seconds=1.0, max_seconds=30.0)
+            self.assertGreater(result, 0)
 
 
 if __name__ == "__main__":
