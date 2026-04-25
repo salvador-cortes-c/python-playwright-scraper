@@ -8,7 +8,7 @@ on:
         required: true
         default: 'newworld,paknsave,woolworths'
       category_names:
-        description: 'Comma-separated list of category names (e.g., "Beer & Wine", "Health & Body")'
+        description: 'Comma-separated list of category names (e.g., "Beer & Wine", "Health & Body"), or "all" to scrape every category'
         required: true
         default: 'Beer & Wine'
       number_of_pages:
@@ -124,56 +124,77 @@ jobs:
           CATEGORY_NAME="${{ github.event.inputs.category_names }}"
           SUPERMARKET="${{ matrix.supermarket }}"
           
-          # URL mapping based on category name and supermarket
-          case "$CATEGORY_NAME" in
-            "Beer & Wine"|"Beer and Wine"|"Beer, Wine & Cider")
-              case "$SUPERMARKET" in
-                newworld)
-                  echo "url=https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
-                  ;;
-                paknsave)
-                  echo "url=https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
-                  ;;
-                woolworths)
-                  echo "url=https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" >> $GITHUB_OUTPUT
-                  ;;
-                *)
-                  echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
-                  ;;
-              esac
-              ;;
-            "Health & Body"|"Health and Body")
-              case "$SUPERMARKET" in
-                newworld)
-                  echo "url=https://www.newworld.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
-                  ;;
-                paknsave)
-                  echo "url=https://www.paknsave.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
-                  ;;
-                woolworths)
-                  echo "url=https://www.woolworths.co.nz/shop/browse/health-beauty?page=1&size=48" >> $GITHUB_OUTPUT
-                  ;;
-                *)
-                  echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
-                  ;;
-              esac
-              ;;
-            *)
-              # For unknown categories, use default URL for the supermarket
-              echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
-              echo "Warning: Using default URL for category '$CATEGORY_NAME'"
-              ;;
-          esac
+          # When category is 'all', use the supermarket discovery URL and enable full category enumeration
+          if [ "$CATEGORY_NAME" = "all" ]; then
+            case "$SUPERMARKET" in
+              newworld)
+                echo "url=https://www.newworld.co.nz/" >> $GITHUB_OUTPUT
+                ;;
+              paknsave)
+                echo "url=https://www.paknsave.co.nz/" >> $GITHUB_OUTPUT
+                ;;
+              woolworths)
+                echo "url=https://www.woolworths.co.nz/shop" >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                ;;
+            esac
+            echo "discover_all_categories=true" >> $GITHUB_OUTPUT
+            echo "Scraping ALL categories for $SUPERMARKET"
+          else
+            # URL mapping based on category name and supermarket
+            echo "discover_all_categories=false" >> $GITHUB_OUTPUT
+            case "$CATEGORY_NAME" in
+              "Beer & Wine"|"Beer and Wine"|"Beer, Wine & Cider")
+                case "$SUPERMARKET" in
+                  newworld)
+                    echo "url=https://www.newworld.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
+                    ;;
+                  paknsave)
+                    echo "url=https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1" >> $GITHUB_OUTPUT
+                    ;;
+                  woolworths)
+                    echo "url=https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" >> $GITHUB_OUTPUT
+                    ;;
+                  *)
+                    echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                    ;;
+                esac
+                ;;
+              "Health & Body"|"Health and Body")
+                case "$SUPERMARKET" in
+                  newworld)
+                    echo "url=https://www.newworld.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
+                    ;;
+                  paknsave)
+                    echo "url=https://www.paknsave.co.nz/shop/category/health-and-body?pg=1" >> $GITHUB_OUTPUT
+                    ;;
+                  woolworths)
+                    echo "url=https://www.woolworths.co.nz/shop/browse/health-beauty?page=1&size=48" >> $GITHUB_OUTPUT
+                    ;;
+                  *)
+                    echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                    ;;
+                esac
+                ;;
+              *)
+                # For unknown categories, use default URL for the supermarket
+                echo "url=${{ matrix.default_url }}" >> $GITHUB_OUTPUT
+                echo "Warning: Using default URL for category '$CATEGORY_NAME'"
+                ;;
+            esac
+          fi
           
-          echo "Using URL: $(cat $GITHUB_OUTPUT | grep url= | cut -d= -f2-)"
+          echo "Using URL: $(grep '^url=' $GITHUB_OUTPUT | tail -1 | cut -d= -f2-)"
 
       - name: Determine max pages parameter
         id: max_pages
         run: |
           NUMBER_OF_PAGES="${{ github.event.inputs.number_of_pages }}"
           if [ "$NUMBER_OF_PAGES" = "all" ]; then
-            echo "max_pages=1000" >> $GITHUB_OUTPUT
-            echo "Scraping all pages (max 1000)"
+            echo "max_pages=all" >> $GITHUB_OUTPUT
+            echo "Scraping all pages (no cap)"
           else
             # Validate it's a number
             if [[ "$NUMBER_OF_PAGES" =~ ^[0-9]+$ ]]; then
@@ -202,6 +223,13 @@ jobs:
           echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
           echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
           
+          # Build optional flags
+          EXTRA_FLAGS=()
+          if [ "${{ steps.category_url.outputs.discover_all_categories }}" = "true" ]; then
+            EXTRA_FLAGS+=(--discover-category-urls)
+            echo "🗂️  Discovering all categories for ${{ matrix.supermarket }}"
+          fi
+          
           # Run scraper with automatic provider fallback (direct → oxylabs)
           # The scraper will handle provider fallback internally
           python scraper.py \
@@ -215,7 +243,8 @@ jobs:
             --output products_${{ matrix.supermarket }}_${{ github.run_id }}.json \
             --price-output price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json \
             --delay-seconds 1.0 \
-            --delay-jitter-seconds 0.5
+            --delay-jitter-seconds 0.5 \
+            "${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}"
 
       - name: Verify scrape results
         if: always()
