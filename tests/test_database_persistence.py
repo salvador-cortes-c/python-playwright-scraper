@@ -672,7 +672,9 @@ class DatabasePersistenceTests(unittest.TestCase):
     # Normalization edge cases: whitespace, case, special characters
     # ------------------------------------------------------------------
 
-    def test_normalize_name_for_key_strips_leading_trailing_whitespace(self):
+    def test_normalize_name_for_key_lowercases_and_preserves_whitespace(self):
+        """_normalize_name_for_key lowercases but does not strip surrounding whitespace;
+        stripping happens only in _normalize_product_record via the clean_name step."""
         self.assertEqual(
             _normalize_name_for_key("  Heineken Lager  "),
             "  heineken lager  ",
@@ -692,15 +694,17 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertIn("wattie's", key)
 
     def test_normalize_name_for_key_only_replaces_word_connecting_hyphens(self):
-        """A hyphen between two words is replaced; a leading hyphen is left intact."""
+        """A hyphen that connects two word characters is replaced with a space;
+        a hyphen that does not connect two word characters (e.g. a separator dash
+        preceded by a space) is left unchanged."""
         # Word-connecting hyphen should be replaced with a space
         self.assertEqual(
             _normalize_name_for_key("Laid-Back Lager"),
             "laid back lager",
         )
-        # Hyphen not between word characters should not be changed
+        # Hyphen used as a separator (space on left) should not be changed
         key_with_dash = _normalize_name_for_key("Green & Black's - Dark Chocolate")
-        self.assertNotIn("laid", key_with_dash)
+        self.assertIn("black's - dark", key_with_dash)
 
     # ------------------------------------------------------------------
     # Pack-size mismatch edge cases
@@ -807,7 +811,7 @@ class DatabasePersistenceTests(unittest.TestCase):
                 self.promo_unit_price = ""
 
         snapshots = [
-            Snapshot("PAKn'SAVE Kilbirnie", "Pak'nSave"),
+            Snapshot("PAK'nSAVE Kilbirnie", "Pak'nSave"),
             Snapshot("New World Karori", "New World"),
         ]
 

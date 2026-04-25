@@ -451,7 +451,7 @@ Product names differ across supermarkets for the same physical item — differen
 | Word-connecting hyphens → spaces | `"Laid-Back"` → `"laid back"` |
 | Known misspelling corrections | `"Larger"` → `"lager"` |
 
-`_normalize_packaging()` canonicalises pack-size tokens so variants scraped with different notation produce the same key component:
+`_normalize_packaging()` normalizes pack-size tokens so variants scraped with different notation produce the same key component:
 
 | Notation | Canonical form |
 |---|---|
@@ -459,7 +459,7 @@ Product names differ across supermarkets for the same physical item — differen
 | `"6 pack 330mL"` | `"6x330mL"` |
 | `"750 ml"` | `"750ml"` |
 
-**Result:** PAK'nSAVE `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` and New World `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` → same `product_key`.  Woolworths `"Boundary Craft Beer Laid Back Larger"` (different brand phrase) → distinct `product_key`; handled by Layer 2.
+**Result:** PAK'nSAVE `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` and New World `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` → same `product_key`.  Woolworths `"Boundary Craft Beer Laid Back Larger"` (Woolworths typo: "Larger" instead of "Lager", different brand phrase) → distinct `product_key`; handled by Layer 2.
 
 ### Layer 2 — Semantic similarity deduplication (post-scrape batch job)
 
