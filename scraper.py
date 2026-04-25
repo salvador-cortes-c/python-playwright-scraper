@@ -2561,6 +2561,8 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
     discovered_categories_all: list[CategoryLink] = []
     category_page_counts_all: list[CategoryPageCount] = []
     rate_limit_hit = False
+    pw_total_pages = 0
+    pw_error_count = 0
 
     if args.append_snapshots:
         all_snapshots = load_price_snapshots(price_output_path)
@@ -2648,7 +2650,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                         discovered_categories_all.extend(categories)
                         categories_for_pagination = categories or categories_for_pagination
                         expanded_urls = [item.url for item in categories]
-                        print(f"Discovered {len(expanded_urls)} category URLs from: {input_url}")
+                        print(f"[Scraper] Discovered {len(expanded_urls)} category URLs from: {input_url}", flush=True)
                         if not expanded_urls:
                             print(
                                 "WARNING: No category URLs discovered; falling back to input URL. "
@@ -2658,8 +2660,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
                     if args.crawl_category_pages or args.count_category_pages:
                         paginated_urls: list[str] = []
-                        for category in categories_for_pagination:
+                        for cat_idx, category in enumerate(categories_for_pagination, 1):
                             category_url = category.url
+                            print(
+                                f"[Scraper] Discovering pages for category {cat_idx}/{len(categories_for_pagination)}: "
+                                f"{category.name or category_url}",
+                                flush=True,
+                            )
                             try:
                                 pages = await discover_category_page_urls_playwright(page, category_url, args)
                             except RateLimitError as exc:
@@ -2669,7 +2676,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
                                 pages = [category_url]
 
-                            print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
+                            print(f"[Scraper]   → {len(pages)} page URL(s) for: {category_url}", flush=True)
                             if args.count_category_pages:
                                 category_page_counts_all.append(
                                     CategoryPageCount(name=category.name, url=category_url, page_count=len(pages))
@@ -2723,7 +2730,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 return
 
             async def scrape_urls_for_current_store(to_scrape: list[str], current_store_name: str | None = None) -> None:
-                nonlocal rate_limit_hit, all_products, all_snapshots, page
+                nonlocal rate_limit_hit, all_products, all_snapshots, page, pw_total_pages, pw_error_count
 
                 completed_set = set(progress.completed_urls) if args.resume else set()
                 targets = [current for current in to_scrape if current not in completed_set]
@@ -2732,8 +2739,14 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 if args.resume:
                     print(f"Resume enabled: skipping {len(to_scrape) - len(targets)} already-completed URLs")
 
-                for current_url in targets:
-                    print(f"Scraping URL: {current_url}")
+                total_pages_to_scrape = len(targets)
+                pages_attempted = 0
+                scrape_error_count = 0
+                print(f"[Scraper] Starting scrape of {total_pages_to_scrape} page URL(s)...", flush=True)
+
+                for page_idx, current_url in enumerate(targets, 1):
+                    pages_attempted = page_idx
+                    print(f"[Scraper] GET {current_url} (page {page_idx}/{total_pages_to_scrape})", flush=True)
                     rl_attempt = 0
                     page_crash_attempt = 0
                     products: list[Product] = []
@@ -2747,6 +2760,12 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 args=args,
                                 supermarket_name=current_store_name,
                                 store_name=current_store_name,
+                            )
+
+                            print(
+                                f"[Scraper] ✅ Page {page_idx}/{total_pages_to_scrape}: "
+                                f"found {len(products)} products, {len(snapshots)} snapshots",
+                                flush=True,
                             )
 
                             if args.resume:
@@ -2787,6 +2806,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                         except RateLimitError as exc:
                             print(f"WARNING: {exc}")
                             if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
+                                scrape_error_count += 1
                                 rate_limit_hit = True
                                 products, snapshots = [], []
                                 break
@@ -2797,6 +2817,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                         except Exception as exc:
                             if _is_playwright_page_crash_error(exc):
                                 if page_crash_attempt >= max(0, int(args.max_page_retries)):
+                                    scrape_error_count += 1
                                     raise
                                 page_crash_attempt += 1
                                 print(
@@ -2816,6 +2837,9 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
                     if rate_limit_hit:
                         break
+
+                pw_total_pages += pages_attempted
+                pw_error_count += scrape_error_count
 
             if args.scrape_all_stores:
                 if store_indices is not None:
@@ -2883,6 +2907,19 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
+
+    unique_category_count = len({c.url for c in discovered_categories_all})
+    print("", flush=True)
+    print("[Scraper] ══════════════════ Final Summary ══════════════════", flush=True)
+    print(f"[Scraper] Categories scraped  : {unique_category_count}", flush=True)
+    print(f"[Scraper] Pages scraped       : {pw_total_pages}", flush=True)
+    print(f"[Scraper] Products discovered : {len(all_products)}", flush=True)
+    print(f"[Scraper] Snapshots created   : {len(all_snapshots)}", flush=True)
+    if pw_error_count > 0:
+        print(f"[Scraper] ⚠️  Errors encountered: {pw_error_count}", flush=True)
+    if rate_limit_hit:
+        print("[Scraper] ⚠️  Run stopped early due to rate limiting", flush=True)
+    print("[Scraper] ═══════════════════════════════════════════════════", flush=True)
 
 
 def scrape_products_from_html(
@@ -3766,7 +3803,7 @@ async def main() -> None:
                     discovered_categories_all.extend(categories)
                     categories_for_pagination = categories or categories_for_pagination
                     expanded_urls = [item.url for item in categories]
-                    print(f"Discovered {len(expanded_urls)} category URLs from: {input_url}")
+                    print(f"[Scraper] Discovered {len(expanded_urls)} category URLs from: {input_url}", flush=True)
                     if not expanded_urls:
                         print(
                             "WARNING: No category URLs discovered; falling back to input URL. "
@@ -3776,8 +3813,13 @@ async def main() -> None:
 
                 if args.crawl_category_pages or args.count_category_pages:
                     paginated_urls: list[str] = []
-                    for category in categories_for_pagination:
+                    for cat_idx, category in enumerate(categories_for_pagination, 1):
                         category_url = category.url
+                        print(
+                            f"[Scraper] Discovering pages for category {cat_idx}/{len(categories_for_pagination)}: "
+                            f"{category.name or category_url}",
+                            flush=True,
+                        )
                         try:
                             html = await fetch_html_or_raise(
                                 session=session,
@@ -3807,7 +3849,7 @@ async def main() -> None:
                                 print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
                                 pages = [category_url]
 
-                        print(f"Discovered {len(pages)} paginated URLs for category: {category_url}")
+                        print(f"[Scraper]   → {len(pages)} page URL(s) for: {category_url}", flush=True)
                         if args.count_category_pages:
                             category_page_counts_all.append(
                                 CategoryPageCount(name=category.name, url=category_url, page_count=len(pages))
@@ -3866,10 +3908,16 @@ async def main() -> None:
             skipped = len(resolved_urls) - len(targets)
             print(f"Resume enabled: skipping {skipped} already-completed URLs")
 
+        total_pages_to_scrape = len(targets)
+        pages_attempted = 0
+        scrape_error_count = 0
+        print(f"[Scraper] Starting scrape of {total_pages_to_scrape} page URL(s)...", flush=True)
+
         switched_to_fallback = False
 
-        for current_url in targets:
-            print(f"Scraping URL: {current_url}")
+        for page_idx, current_url in enumerate(targets, 1):
+            pages_attempted = page_idx
+            print(f"[Scraper] GET {current_url} (page {page_idx}/{total_pages_to_scrape})", flush=True)
             rl_attempt = 0
             transient_attempt = 0
             products, snapshots = [], []
@@ -3892,6 +3940,11 @@ async def main() -> None:
                     )
                     if switched_to_fallback:
                         print("✅ Fallback provider succeeded")
+                    print(
+                        f"[Scraper] ✅ Page {page_idx}/{total_pages_to_scrape}: "
+                        f"found {len(products)} products, {len(snapshots)} snapshots",
+                        flush=True,
+                    )
                     break
                 except (RateLimitError, TransientError, RuntimeError) as exc:
                     # Rate limit / bot challenge on primary: switch to fallback immediately and permanently
@@ -3921,6 +3974,7 @@ async def main() -> None:
                                 f"Giving up on {current_url} after {transient_attempt} "
                                 f"transient retries [{active_label}]"
                             )
+                            scrape_error_count += 1
                             break
                         transient_attempt += 1
                         wait_seconds = _compute_backoff(
@@ -3942,6 +3996,7 @@ async def main() -> None:
                                     f"Giving up on {current_url}: fallback provider also rate limited "
                                     f"after {rl_attempt} retries"
                                 )
+                                scrape_error_count += 1
                             else:
                                 rate_limit_hit = True
                             break
@@ -3965,6 +4020,7 @@ async def main() -> None:
                             transient_attempt = 0
                             rl_attempt = 0
                             continue
+                        scrape_error_count += 1
                         break
 
             if rate_limit_hit:
@@ -4039,6 +4095,19 @@ async def main() -> None:
 
     if rate_limit_hit:
         print("Run stopped early due to rate limiting; partial results were saved.")
+
+    unique_category_count = len({c.url for c in discovered_categories_all})
+    print("", flush=True)
+    print("[Scraper] ══════════════════ Final Summary ══════════════════", flush=True)
+    print(f"[Scraper] Categories scraped  : {unique_category_count}", flush=True)
+    print(f"[Scraper] Pages scraped       : {pages_attempted}", flush=True)
+    print(f"[Scraper] Products discovered : {len(all_products)}", flush=True)
+    print(f"[Scraper] Snapshots created   : {len(all_snapshots)}", flush=True)
+    if scrape_error_count > 0:
+        print(f"[Scraper] ⚠️  Errors encountered: {scrape_error_count}", flush=True)
+    if rate_limit_hit:
+        print("[Scraper] ⚠️  Run stopped early due to rate limiting", flush=True)
+    print("[Scraper] ═══════════════════════════════════════════════════", flush=True)
 
     # Post-scrape semantic deduplication (always runs when scraping completes)
     if DeduplicationIntegration:
