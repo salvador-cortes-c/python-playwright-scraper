@@ -65,7 +65,9 @@ SELECT
     btrim(p.name)  AS display_name,
     COALESCE(NULLIF(btrim(p.packaging_format), ''), '') AS packaging,
     p.image_url,
-    -- Apply three-step normalization then build the key
+    -- Apply three-step normalization then build the key.
+    -- Packaging is normalized the same way as Python's _normalize_packaging():
+    --   remove spaces around 'x' separators and before unit suffixes.
     CASE
         WHEN COALESCE(NULLIF(btrim(p.packaging_format), ''), '') <> '' THEN
             regexp_replace(
@@ -74,7 +76,13 @@ SELECT
                     '(\w)-(\w)', '\1 \2', 'g'
                 ),
                 '\mlarger\M', 'lager', 'gi'
-            ) || '_' || lower(btrim(p.packaging_format))
+            ) || '_' || regexp_replace(
+                                regexp_replace(
+                                    lower(btrim(p.packaging_format)),
+                                    '\s*[x×]\s*', 'x', 'g'
+                                ),
+                                '\s+(?=(?:kg|g|mg|l|ml|cl|ea)\M)', '', 'gi'
+                            )
         ELSE
             regexp_replace(
                 regexp_replace(

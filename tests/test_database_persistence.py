@@ -10,6 +10,7 @@ from database import (
     _find_category_id_for_source_url,
     _infer_supermarket_name,
     _normalize_name_for_key,
+    _normalize_packaging,
     _normalize_product_record,
     _parse_price_to_cents,
     _snapshot_store_name,
@@ -122,6 +123,98 @@ class DatabasePersistenceTests(unittest.TestCase):
         # Word-connecting hyphen removed from Pak'nSave key
         self.assertNotIn("laid-back", paknsave_key)
         self.assertIn("laid back", paknsave_key)
+
+    def test_normalize_packaging_removes_spaces_around_x(self):
+        """Explicit packaging '6 x 330ml' and inferred '6x330ml' are equivalent."""
+        self.assertEqual(_normalize_packaging("6 x 330ml"), "6x330ml")
+        self.assertEqual(_normalize_packaging("12 x 330ml"), "12x330ml")
+        self.assertEqual(_normalize_packaging("6x330ml"), "6x330ml")
+
+    def test_normalize_packaging_removes_spaces_before_units(self):
+        """Packaging '750 ml' normalizes to '750ml'."""
+        self.assertEqual(_normalize_packaging("750 ml"), "750ml")
+        self.assertEqual(_normalize_packaging("1.5 l"), "1.5l")
+        self.assertEqual(_normalize_packaging("500g"), "500g")
+
+    def test_cross_supermarket_explicit_vs_inferred_packaging_produces_same_key(self):
+        """When one supermarket provides explicit packaging and another has the packaging
+        only in the product name, both should produce the same product_key so that
+        the database stores a single canonical record."""
+        # PAKn'SAVE: packaging provided explicitly as '6 x 330ml' (with spaces)
+        paknsave = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "6 x 330ml",
+        )
+        # New World: packaging not provided separately (inferred from name)
+        new_world_inferred = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "",
+        )
+
+        self.assertIsNotNone(paknsave)
+        self.assertIsNotNone(new_world_inferred)
+        self.assertEqual(
+            paknsave[0],
+            new_world_inferred[0],
+            "Explicit and inferred packaging should produce the same product_key",
+        )
+
+    def test_boundary_lager_three_supermarkets_deduplication_state(self):
+        """Comprehensive deduplication check for the three cross-supermarket Boundary
+        Road Lager products.
+
+        - PAKn'SAVE and New World share the same full product name and packaging so
+          they are deduplicated by normalization (same product_key).
+        - Woolworths uses a different brand description and has no packaging info, so
+          it produces a distinct key; it is a candidate for semantic deduplication
+          (similarity_deduplication.py) rather than key-based deduplication.
+        """
+        paknsave = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "6 x 330ml",
+        )
+        new_world = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "6 x 330ml",
+        )
+        woolworths = _normalize_product_record(
+            "",
+            "Boundary Craft Beer Laid Back Larger",
+            "",
+        )
+
+        self.assertIsNotNone(paknsave)
+        self.assertIsNotNone(new_world)
+        self.assertIsNotNone(woolworths)
+
+        paknsave_key, _, _ = paknsave
+        new_world_key, _, _ = new_world
+        woolworths_key, woolworths_name, _ = woolworths
+
+        # PAKn'SAVE and New World: same canonical product → identical key
+        self.assertEqual(
+            paknsave_key,
+            new_world_key,
+            "PAKn'SAVE and New World should share a product_key for the same product",
+        )
+
+        # Woolworths: different brand description → distinct key
+        self.assertNotEqual(
+            woolworths_key,
+            paknsave_key,
+            "Woolworths product has a different brand name and needs semantic deduplication",
+        )
+
+        # Woolworths key must have 'lager' corrected (not 'larger')
+        self.assertIn("lager", woolworths_key)
+        self.assertNotIn("larger", woolworths_key)
+
+        # Woolworths display name is preserved unchanged (typo kept for display)
+        self.assertEqual(woolworths_name, "Boundary Craft Beer Laid Back Larger")
 
     def test_infer_supermarket_name_from_store_or_url(self):
         self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")

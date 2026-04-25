@@ -113,6 +113,18 @@ def _normalize_name_for_key(name: str) -> str:
     return result
 
 
+def _normalize_packaging(packaging: str) -> str:
+    """Normalize a packaging string for use in a product key.
+
+    Applies the same transformations as :func:`_extract_packaging_from_name` so
+    that explicitly-provided packaging values ("6 x 330ml") produce the same key
+    component as inferred ones ("6x330ml").
+    """
+    result = re.sub(r"\s*[x×]\s*", "x", packaging)
+    result = re.sub(r"\s+(?=(?:kg|g|mg|l|ml|cl|ea)\b)", "", result, flags=re.IGNORECASE)
+    return result.strip()
+
+
 def _normalize_product_record(
     product_key: str | None,
     name: str | None,
@@ -125,6 +137,8 @@ def _normalize_product_record(
     clean_packaging = " ".join(str(packaging_format or "").split()).strip()
     if not clean_packaging:
         clean_packaging = _extract_packaging_from_name(clean_name)
+    else:
+        clean_packaging = _normalize_packaging(clean_packaging)
 
     key_name = _normalize_name_for_key(clean_name)
     clean_key = f"{key_name}_{clean_packaging.lower()}" if clean_packaging else key_name
