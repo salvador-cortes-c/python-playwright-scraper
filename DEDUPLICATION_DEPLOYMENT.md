@@ -33,10 +33,21 @@ A comprehensive, **flexible, generic product deduplication system** with three l
 ## Files Created/Modified
 
 ### Core Deduplication
-- ✅ `similarity_deduplication.py` - Main deduplication engine (462 lines)
-- ✅ `scraper_deduplication_integration.py` - Scraper integration (290 lines)
+- ✅ `similarity_deduplication.py` - Main deduplication engine
+- ✅ `scraper_deduplication_integration.py` - Scraper integration (auto-executes consolidations)
 - ✅ `deduplication_config.yaml` - Configuration file
-- ✅ `db/010_create_consolidation_log.sql` - Database schema
+- ✅ `db/010_create_consolidation_log.sql` - Database schema (standalone)
+
+### Database Migrations
+- ✅ `db/retroactive_deduplicate_products.sql` - **Retroactive migration for existing records**
+  - Applies same normalization rules as `_normalize_name_for_key()` in Python
+  - Merges products with duplicate normalized keys across supermarkets
+  - Logs all changes to `consolidation_log` table for full audit trail
+  - Idempotent: safe to run multiple times
+
+### Schema (Auto-managed)
+- ✅ `consolidation_log` table now created automatically by `_ensure_schema()` in `database.py`
+  - No longer requires a separate manual SQL step
 
 ### Scraper Integration
 - ✅ `scraper.py` - Modified main() function to:
@@ -46,10 +57,10 @@ A comprehensive, **flexible, generic product deduplication system** with three l
   - Export suggestions and patterns
 
 ### Testing & Docs
-- ✅ `test_deduplication.py` - Comprehensive test suite (259 lines)
+- ✅ `tests/test_database_persistence.py` - Added cross-supermarket normalization tests
 - ✅ `setup_deduplication.sh` - Automated setup script
 - ✅ `DEDUPLICATION_QUICKSTART.md` - Quick reference guide
-- ✅ `DEDUPLICATION_STRATEGY.md` - Architecture & roadmap (153 lines)
+- ✅ `DEDUPLICATION_STRATEGY.md` - Architecture & roadmap
 - ✅ `DEDUPLICATION_USAGE.md` - Detailed usage guide
 - ✅ `DEDUPLICATION_PATTERNS.md` - 5 integration approaches
 
@@ -60,40 +71,65 @@ A comprehensive, **flexible, generic product deduplication system** with three l
 
 ---
 
-## Latest Commits
+## Retroactive Migration: Deduplicating Legacy Records
 
-| Commit | Message | Files |
-|--------|---------|-------|
-| 1150e23 | Add semantic deduplication system | 5 files |
-| ec12dfd | Complete semantic deduplication integration | 5 files |
+If the Neon DB contains product records created before the normalization rules
+were in place, run the idempotent migration script to repair them:
+
+```bash
+export DATABASE_URL="postgresql://..."
+psql "$DATABASE_URL" -f db/retroactive_deduplicate_products.sql
+```
+
+### What the migration does
+
+The script mirrors Python's `_normalize_name_for_key()` logic in SQL:
+
+| Step | Python equivalent | SQL |
+|------|-------------------|-----|
+| Lowercase | `name.lower()` | `lower(btrim(name))` |
+| Dehyphenate word boundaries | `re.sub(r'(\w)-(\w)', r'\1 \2', …)` | `regexp_replace(…, '(\w)-(\w)', '\1 \2', 'g')` |
+| Fix "Larger→Lager" typo | `re.sub(r'\blarger\b', 'lager', …, IGNORECASE)` | `regexp_replace(…, '\mlarger\M', 'lager', 'gi')` |
+| Append packaging | `key + '_' + packaging.lower()` | `… || '_' || lower(packaging_format)` |
+
+Products that map to the same normalized key are **merged** into one canonical
+record. All `price_snapshots` and `product_categories` rows are re-pointed to
+the canonical key; the orphaned duplicate rows are removed.
+
+Every change is recorded in `consolidation_log` with `method = 'normalization'`
+for a full audit trail.
+
+### Specific example handled
+
+| Supermarket | Raw name | Normalized key |
+|-------------|----------|----------------|
+| PAK'nSAVE  | Boundary Road Brewery Laid-**Back** Lager Cans 6 x 330ml | `boundary road brewery laid back lager cans_6x330ml` |
+| New World  | Boundary Road Brewery Laid-**Back** Lager Cans 6 x 330ml | `boundary road brewery laid back lager cans_6x330ml` ← **same** |
+| Woolworths | Boundary Craft Beer Laid Back **Larger** | `boundary craft beer laid back lager` (typo corrected) |
+
+PAK'nSAVE and New World produce the **same key** after normalization and are
+therefore stored as a single product row.  Woolworths uses a different brand
+descriptor ("Craft Beer" vs "Road Brewery") — this case is handled by the
+**semantic deduplication** layer (Layer 2 above), which uses sentence embeddings
+to detect near-duplicate products across different supermarket naming
+conventions.
 
 ---
 
-## Database Setup Required
+## Database Setup
 
-### One-Time: Create consolidation_log table
+### Automatic (recommended)
+The `consolidation_log` table is now created automatically by `_ensure_schema()`
+every time the scraper runs with `--persist-db`.  No manual step required.
 
+### Manual (first-time or standalone)
 ```bash
-# Option 1: CLI
-export DATABASE_URL="postgresql://..."
-psql "$DATABASE_URL" < python-playwright-scraper/db/010_create_consolidation_log.sql
+# Option A: run the full retroactive migration (also creates consolidation_log)
+psql "$DATABASE_URL" -f db/retroactive_deduplicate_products.sql
 
-# Option 2: Python
-python -c "
-import psycopg
-import os
-with open('python-playwright-scraper/db/010_create_consolidation_log.sql') as f:
-    with psycopg.connect(os.getenv('DATABASE_URL')) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f.read())
-        conn.commit()
-"
+# Option B: create table only
+psql "$DATABASE_URL" -f db/010_create_consolidation_log.sql
 ```
-
-This creates:
-- `consolidation_log` table (audit trail)
-- `consolidation_stats` view (analytics)
-- `active_consolidations` view (monitoring)
 
 ---
 
@@ -104,42 +140,32 @@ This creates:
 pip install -r requirements.txt
 ```
 
-### 2. Set up database
+### 2. Apply retroactive migration (existing Neon DB)
 ```bash
-psql "$DATABASE_URL" < db/010_create_consolidation_log.sql
+psql "$DATABASE_URL" -f db/retroactive_deduplicate_products.sql
 ```
 
 ### 3. Run tests
 ```bash
-python test_deduplication.py
+python -m unittest discover -s tests -p "test_database_persistence.py"
 ```
 
-### 4. Find duplicates
+### 4. Find remaining semantic duplicates
 ```bash
 python similarity_deduplication.py --category wine --threshold 0.87
 ```
 
-### 5. Export suggestions
+### 5. Export suggestions for review
 ```bash
 python similarity_deduplication.py --export-migration > consolidations.sql
-```
-
-### 6. Review & apply
-```bash
-# Review suggestions
-cat consolidations.sql | less
-
-# Apply (after manual review)
+cat consolidations.sql   # review before applying
 psql "$DATABASE_URL" < consolidations.sql
 ```
 
-### 7. Integrate with scraper (automatic)
+### 6. Integrate with scraper (automatic)
 ```bash
-# Deduplication runs automatically after scraping
+# Deduplication now executes automatically after scraping
 python scraper.py --url "..." --retailers woolworths --persist-db
-
-# Or skip it
-python scraper.py --url "..." --skip-deduplication
 ```
 
 ---
@@ -151,10 +177,11 @@ python scraper.py --url "..." --skip-deduplication
 ✅ **Safe:** Confidence-based gating with review queue  
 ✅ **Learning:** Extracts patterns from consolidations  
 ✅ **Scalable:** Batch processing, cached embeddings  
-✅ **Auditable:** Full consolidation logging  
-✅ **Integrated:** Hook in scraper main loop  
+✅ **Auditable:** Full consolidation logging (DB + JSON)  
+✅ **Integrated:** Hook in scraper main loop (actually executes consolidations)  
 ✅ **Configurable:** Per-category thresholds  
 ✅ **Tested:** Comprehensive test suite  
+✅ **Retroactive:** Migration script for legacy DB records  
 
 ---
 
@@ -196,7 +223,7 @@ python scraper.py --url "..." --dedup-review-threshold 0.80
 1. Scraper runs, inserts products to DB
 2. Layer 1 normalization applied during insert (fast)
 3. **Layer 2 semantic matching runs automatically** (post-scrape) ← Always runs
-4. Auto-consolidates high-confidence matches (>0.95 by default)
+4. **Auto-consolidates high-confidence matches** (>0.95 by default) ← Now executes against DB
 5. Exports mid-confidence for review (0.85-0.95 by default)
 6. Extracts patterns from consolidations
 7. Suggests updates to Layer 1 normalization
@@ -212,43 +239,51 @@ SELECT * FROM consolidation_log ORDER BY created_at DESC LIMIT 20;
 
 ### Statistics
 ```sql
-SELECT * FROM consolidation_stats;
+SELECT method, status, COUNT(*), AVG(similarity_score), SUM(snapshots_migrated)
+FROM consolidation_log
+GROUP BY method, status;
 ```
 
-### Active consolidations
+### Products with remaining duplicates (for semantic review)
 ```sql
-SELECT * FROM active_consolidations;
-```
-
-### JSON logs
-```bash
-jq 'length' consolidations_log.json     # Total consolidations
-jq '[.[].similarity_score] | add / length' consolidations_log.json  # Avg similarity
+SELECT name, COUNT(*) as count
+FROM products
+GROUP BY name
+HAVING COUNT(*) > 1
+ORDER BY count DESC;
 ```
 
 ---
 
-## Next Steps
+## Deduplication Logic Summary
 
-### For Immediate Use
-1. ✅ Set DATABASE_URL
-2. ✅ Run `python test_deduplication.py`
-3. ✅ Execute setup script: `bash setup_deduplication.sh`
-4. ✅ Try: `python similarity_deduplication.py --category wine`
-5. ✅ Review suggestions & apply consolidations
+### How product_key is generated (Python)
 
-### For Production
-1. Test on staging database first
-2. Set appropriate thresholds per category
-3. Monitor consolidation_log table
-4. Run `python similarity_deduplication.py --extract-patterns` periodically
-5. Update Layer 1 modifiers based on learned patterns
+```python
+def _normalize_name_for_key(name: str) -> str:
+    result = name.lower()
+    result = re.sub(r'(\w)-(\w)', r'\1 \2', result)   # dehyphenate
+    result = re.sub(r'\blarger\b', 'lager', result, flags=re.IGNORECASE)
+    return result
 
-### For Optimization
-1. Profile embedding generation time
-2. Tune batch sizes if needed
-3. Increase threshold if false positives occur
-4. Decrease threshold if duplicates missed
+product_key = f"{normalize(name)}_{packaging.lower()}" if packaging else normalize(name)
+```
+
+### How the retroactive SQL migration applies the same rules
+
+```sql
+regexp_replace(
+    regexp_replace(lower(btrim(name)), '(\w)-(\w)', '\1 \2', 'g'),
+    '\mlarger\M', 'lager', 'gi'
+) || CASE WHEN packaging <> '' THEN '_' || lower(packaging) ELSE '' END
+```
+
+### 1-to-1 mapping guarantee
+
+After running `db/retroactive_deduplicate_products.sql`:
+- Products with identical names across supermarkets → **single canonical row**
+- Products that differed only by hyphenation or "Larger/Lager" typo → **merged**
+- Semantically similar products (different brand wording) → **flagged for review** via Layer 2
 
 ---
 
@@ -257,71 +292,11 @@ jq '[.[].similarity_score] | add / length' consolidations_log.json  # Avg simila
 | Issue | Solution |
 |-------|----------|
 | `DATABASE_URL not set` | `export DATABASE_URL="postgresql://..."` |
-| `consolidation_log not found` | Run migration: `psql $DATABASE_URL < db/010_create_consolidation_log.sql` |
+| `consolidation_log not found` | Run `psql $DATABASE_URL -f db/retroactive_deduplicate_products.sql` |
 | Slow first run | Model download (~100MB). Subsequent runs use cache. |
 | High memory usage | Reduce batch size or run per-category: `--category wine` |
 | Too many false positives | Increase threshold: `--threshold 0.90` |
 | Missing duplicates | Decrease threshold: `--threshold 0.80` |
-
----
-
-## Architecture Benefits
-
-### Pre-Migration Approach (What We Had)
-- ❌ Hardcoded modifier lists
-- ❌ Doesn't scale to new product types
-- ❌ Manual maintenance when new patterns discovered
-- ❌ One-size-fits-all approach
-
-### New 3-Layer Approach (What We Built)
-- ✅ Learning from data instead of hardcoding
-- ✅ Works for any product category
-- ✅ Automatically discovers new patterns
-- ✅ Semantic understanding, not regex
-- ✅ Audit trail for compliance
-- ✅ Feedback loop for continuous improvement
-- ✅ Safety gates for high-confidence only
-
----
-
-## Performance Notes
-
-- **Embedding Model:** all-MiniLM-L6-v2 (~100MB, CPU-friendly)
-- **First Run:** ~5-10 seconds (model download + initial embeddings)
-- **Subsequent Runs:** <1 second (cached embeddings)
-- **Memory:** ~200MB for model + cache
-- **Suitable For:** Edge, low-resource, CPU-only environments
-
----
-
-## Support & Documentation
-
-- **Quick Start:** `DEDUPLICATION_QUICKSTART.md`
-- **Detailed Usage:** `DEDUPLICATION_USAGE.md`
-- **Integration Patterns:** `DEDUPLICATION_PATTERNS.md`
-- **Architecture:** `DEDUPLICATION_STRATEGY.md`
-- **CLI Help:**
-  ```bash
-  python similarity_deduplication.py --help
-  python scraper_deduplication_integration.py --help
-  ```
-
----
-
-## Production Checklist
-
-- [ ] DATABASE_URL set and tested
-- [ ] Consolidation_log table created
-- [ ] test_deduplication.py passes all tests
-- [ ] Sample deduplication run successful
-- [ ] Thresholds configured per category
-- [ ] Scraper tested with deduplication enabled
-- [ ] Consolidation suggestions reviewed and approved
-- [ ] Consolidations applied to database
-- [ ] Patterns extracted and analyzed
-- [ ] Monitoring dashboard set up (if needed)
-- [ ] Backup database before large consolidations
-- [ ] Document any custom threshold choices
 
 ---
 
@@ -335,16 +310,6 @@ jq '[.[].similarity_score] | add / length' consolidations_log.json  # Avg simila
 
 ---
 
-## Commit History
-
-```
-ec12dfd - Complete semantic deduplication system integration
-1150e23 - Add semantic product deduplication system
-5db8a2a - Refactor: add product name normalization
-697040e - DB: add migration to consolidate duplicate products
-```
-
----
-
-Generated: 2026-04-18
+Generated: 2026-04-25
 Status: Ready for Production ✅
+

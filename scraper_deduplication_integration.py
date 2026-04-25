@@ -115,18 +115,21 @@ class DeduplicationIntegration:
                             f"{group.product_b} → {group.product_a} ({group.similarity:.3f})"
                         )
 
-                        # Generate and execute migration
-                        migration = self.dedup.generate_consolidation_migration(
+                        # Execute consolidation directly against the database
+                        result = self.dedup.execute_consolidation(
                             source_key=group.product_b,
                             canonical_key=group.product_a,
                             similarity=group.similarity,
                             method="semantic_auto",
                         )
 
-                        # TODO: Execute migration
-                        # execute_migration(migration)
+                        logger.info(
+                            f"[Dedup]   Consolidated {group.product_b} → {group.product_a}: "
+                            f"{result['snapshots_migrated']} snapshots, "
+                            f"{result['categories_migrated']} categories migrated"
+                        )
 
-                        # Log consolidation
+                        # Also update local JSON log
                         self.dedup.log_consolidation(
                             source_key=group.product_b,
                             canonical_key=group.product_a,
@@ -134,6 +137,7 @@ class DeduplicationIntegration:
                             canonical_name=group.name_a,
                             similarity=group.similarity,
                             method="semantic",
+                            snapshots_migrated=result["snapshots_migrated"],
                         )
 
                         results["auto_consolidated"] += 1

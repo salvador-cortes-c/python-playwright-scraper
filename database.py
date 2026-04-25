@@ -517,6 +517,51 @@ def _ensure_schema(conn: psycopg.Connection) -> None:
             ON price_snapshots (source_url);
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS consolidation_log (
+                id                    SERIAL PRIMARY KEY,
+                source_product_key    VARCHAR(255) NOT NULL,
+                canonical_product_key VARCHAR(255) NOT NULL,
+                source_product_name   VARCHAR(500),
+                canonical_product_name VARCHAR(500),
+                method                VARCHAR(50)  NOT NULL DEFAULT 'normalization',
+                similarity_score      FLOAT,
+                reason                TEXT,
+                created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                executed_at           TIMESTAMP,
+                status                VARCHAR(50)  NOT NULL DEFAULT 'executed',
+                snapshots_migrated    INT          NOT NULL DEFAULT 0,
+                categories_migrated   INT          NOT NULL DEFAULT 0,
+                error_message         TEXT,
+                CONSTRAINT unique_consolidation UNIQUE (source_product_key, canonical_product_key)
+            );
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_consolidation_source
+            ON consolidation_log (source_product_key);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_consolidation_canonical
+            ON consolidation_log (canonical_product_key);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_consolidation_status
+            ON consolidation_log (status);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_consolidation_method
+            ON consolidation_log (method);
+            """
+        )
 
     _backfill_supermarket_refs(conn)
     _backfill_store_refs(conn)

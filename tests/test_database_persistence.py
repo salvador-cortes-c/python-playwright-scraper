@@ -87,6 +87,42 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertNotIn("larger", key)
         self.assertEqual(name, "Boundary Craft Beer Laid Back Larger")
 
+    def test_cross_supermarket_same_product_name_produces_same_key(self):
+        """PAK'nSAVE and New World list the same product under identical names.
+        After normalization both should produce the exact same product_key so
+        the database stores a single record, not two separate ones."""
+        paknsave = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "6 x 330ml",
+        )
+        new_world = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml",
+            "6 x 330ml",
+        )
+
+        self.assertIsNotNone(paknsave)
+        self.assertIsNotNone(new_world)
+        self.assertEqual(paknsave[0], new_world[0], "Same product should produce identical keys across supermarkets")
+
+    def test_normalize_name_for_key_woolworths_larger_typo_produces_shared_base(self):
+        """Woolworths uses the typo 'Larger' instead of 'Lager'.  After
+        normalization the corrected key should share its 'lager' token with
+        the correctly-spelled PAK'nSAVE / New World records so that a semantic
+        deduplication pass can recognise them as the same product."""
+        woolworths_key = _normalize_name_for_key("Boundary Craft Beer Laid Back Larger")
+        paknsave_key   = _normalize_name_for_key("Boundary Road Brewery Laid-Back Lager Cans")
+
+        # Both keys must contain 'lager' (not 'larger')
+        self.assertIn("lager", woolworths_key)
+        self.assertNotIn("larger", woolworths_key)
+        self.assertIn("lager", paknsave_key)
+        self.assertNotIn("larger", paknsave_key)
+        # Word-connecting hyphen removed from Pak'nSave key
+        self.assertNotIn("laid-back", paknsave_key)
+        self.assertIn("laid back", paknsave_key)
+
     def test_infer_supermarket_name_from_store_or_url(self):
         self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")
         self.assertEqual(_infer_supermarket_name(store_name="Pak'nSave Albany"), "Pak'nSave")

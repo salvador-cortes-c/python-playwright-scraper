@@ -266,7 +266,7 @@ class ProductDeduplicator:
             method: Consolidation method ("semantic", "manual", "pattern")
 
         Returns:
-            SQL migration script as string
+            SQL migration script as string (for review; use execute_consolidation to apply)
         """
         return f"""
 -- Consolidate similar products
@@ -281,7 +281,7 @@ INSERT INTO consolidation_log (
     source_product_key, canonical_product_key, method, similarity_score
 ) VALUES (
     '{source_key}', '{canonical_key}', '{method}', {similarity}
-);
+) ON CONFLICT (source_product_key, canonical_product_key) DO NOTHING;
 
 -- Redirect snapshots
 UPDATE price_snapshots
@@ -289,15 +289,111 @@ SET product_key = '{canonical_key}'
 WHERE product_key = '{source_key}';
 
 -- Redirect categories
-UPDATE product_categories
-SET product_key = '{canonical_key}'
-WHERE product_key = '{source_key}';
+INSERT INTO product_categories (product_key, category_id)
+SELECT '{canonical_key}', category_id
+FROM product_categories
+WHERE product_key = '{source_key}'
+ON CONFLICT (product_key, category_id) DO NOTHING;
+
+DELETE FROM product_categories WHERE product_key = '{source_key}';
 
 -- Delete orphaned product
 DELETE FROM products WHERE product_key = '{source_key}';
 
 COMMIT;
 """
+
+    def execute_consolidation(
+        self,
+        source_key: str,
+        canonical_key: str,
+        similarity: float,
+        method: str = "semantic",
+    ) -> dict:
+        """
+        Execute a product consolidation directly against the database using
+        parameterised queries (safe against SQL injection).
+
+        Redirects all price_snapshots and product_categories from *source_key*
+        to *canonical_key*, deletes the orphaned source product row, and records
+        the operation in consolidation_log.
+
+        Args:
+            source_key: product_key to consolidate FROM (will be deleted)
+            canonical_key: product_key to consolidate TO (kept)
+            similarity: confidence score (0.0–1.0)
+            method: label for the consolidation_log ("semantic", "manual", …)
+
+        Returns:
+            dict with keys ``snapshots_migrated`` and ``categories_migrated``
+        """
+        snapshots_migrated = 0
+        categories_migrated = 0
+
+        with psycopg.connect(self.db_url) as conn:
+            with conn.cursor() as cur:
+                # Redirect price snapshots
+                cur.execute(
+                    "UPDATE price_snapshots SET product_key = %s WHERE product_key = %s",
+                    (canonical_key, source_key),
+                )
+                snapshots_migrated = cur.rowcount
+
+                # Copy categories to canonical, then remove from source
+                cur.execute(
+                    """
+                    INSERT INTO product_categories (product_key, category_id)
+                    SELECT %s, category_id
+                    FROM product_categories
+                    WHERE product_key = %s
+                    ON CONFLICT (product_key, category_id) DO NOTHING
+                    """,
+                    (canonical_key, source_key),
+                )
+                cur.execute(
+                    "DELETE FROM product_categories WHERE product_key = %s",
+                    (source_key,),
+                )
+                categories_migrated = cur.rowcount
+
+                # Delete orphaned source product
+                cur.execute(
+                    "DELETE FROM products WHERE product_key = %s",
+                    (source_key,),
+                )
+
+                # Record in consolidation_log
+                cur.execute(
+                    """
+                    INSERT INTO consolidation_log (
+                        source_product_key, canonical_product_key,
+                        method, similarity_score,
+                        reason, status, executed_at,
+                        snapshots_migrated, categories_migrated
+                    ) VALUES (%s, %s, %s, %s, %s, 'executed', NOW(), %s, %s)
+                    ON CONFLICT (source_product_key, canonical_product_key) DO UPDATE
+                        SET executed_at        = NOW(),
+                            status             = 'executed',
+                            snapshots_migrated = EXCLUDED.snapshots_migrated,
+                            categories_migrated = EXCLUDED.categories_migrated
+                    """,
+                    (
+                        source_key,
+                        canonical_key,
+                        method,
+                        similarity,
+                        f"Semantic similarity score: {similarity:.3f}",
+                        snapshots_migrated,
+                        categories_migrated,
+                    ),
+                )
+
+            conn.commit()
+
+        return {
+            "snapshots_migrated": snapshots_migrated,
+            "categories_migrated": categories_migrated,
+        }
 
     def log_consolidation(
         self,
