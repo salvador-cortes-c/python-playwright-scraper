@@ -683,12 +683,20 @@ def persist_scrape_results(
                 row = cur.fetchone()
                 if row:
                     supermarket_name_to_id[supermarket_name] = int(row[0])
+                    # Only count if this is a new insert (check if we previously had this supermarket)
+                    # If the supermarket already existed, the ON CONFLICT would have updated it
+                    # Check if the supermarket was previously unknown to us (which means it's newly inserted)
+                    cur.execute("SELECT xmin, xmax FROM supermarkets WHERE id = %s", (int(row[0]),))
+                    version_info = cur.fetchone()
+                    # A newly inserted row will have xmin set but xmax = 0
+                    # An updated row will have xmax > 0
+                    if version_info and version_info[1] == 0:
+                        stats.supermarkets_upserted += 1
                 else:
                     cur.execute("SELECT id FROM supermarkets WHERE code = %s", (_supermarket_code(supermarket_name),))
                     fallback = cur.fetchone()
                     if fallback:
                         supermarket_name_to_id[supermarket_name] = int(fallback[0])
-                stats.supermarkets_upserted += 1
 
         # Upsert products first so snapshots and links have FK targets.
         with conn.cursor() as cur:
@@ -755,12 +763,16 @@ def persist_scrape_results(
                 row = cur.fetchone()
                 if row:
                     store_name_to_id[store_name] = int(row[0])
+                    # Only count if this is a new insert (check version info using xmin/xmax)
+                    cur.execute("SELECT xmin, xmax FROM stores WHERE id = %s", (int(row[0]),))
+                    version_info = cur.fetchone()
+                    if version_info and version_info[1] == 0:
+                        stats.stores_upserted += 1
                 else:
                     cur.execute("SELECT id FROM stores WHERE name = %s", (store_name,))
                     fallback = cur.fetchone()
                     if fallback:
                         store_name_to_id[store_name] = int(fallback[0])
-                stats.stores_upserted += 1
 
         with conn.cursor() as cur:
             cur.execute("SELECT id, url FROM categories")
