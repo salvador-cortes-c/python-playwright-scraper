@@ -62,6 +62,16 @@ _PACKAGING_IN_NAME_RE = re.compile(
     """
 )
 
+# Matches a hyphen that connects two word characters (e.g. "Laid-Back").
+_WORD_CONNECTING_HYPHEN_RE = re.compile(r"(\w)-(\w)")
+
+# Known misspelling corrections applied to product names before key generation.
+# Each entry is (compiled pattern, canonical replacement).  Patterns are matched
+# case-insensitively; the replacement is always the canonical lowercase form.
+_PRODUCT_NAME_CORRECTIONS: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\blarger\b", re.IGNORECASE), "lager"),  # beer name typo
+)
+
 
 def _looks_like_price_only_name(value: str | None) -> bool:
     cleaned = " ".join(str(value or "").split()).strip()
@@ -85,6 +95,24 @@ def _extract_packaging_from_name(name: str | None) -> str:
     return packaging.strip()
 
 
+def _normalize_name_for_key(name: str) -> str:
+    """Return a normalized lowercase form of *name* for product_key generation.
+
+    Applies surface-form standardizations so that the same physical product
+    scraped from different supermarkets is more likely to produce the same key:
+    - Converts to lowercase.
+    - Replaces word-connecting hyphens with spaces ("Laid-Back" → "laid back").
+    - Applies a fixed list of known misspelling corrections (e.g. "Larger" → "lager").
+
+    The original display name is never modified by this function.
+    """
+    result = name.lower()
+    result = _WORD_CONNECTING_HYPHEN_RE.sub(r"\1 \2", result)
+    for pattern, replacement in _PRODUCT_NAME_CORRECTIONS:
+        result = pattern.sub(replacement, result)
+    return result
+
+
 def _normalize_product_record(
     product_key: str | None,
     name: str | None,
@@ -98,7 +126,8 @@ def _normalize_product_record(
     if not clean_packaging:
         clean_packaging = _extract_packaging_from_name(clean_name)
 
-    clean_key = f"{clean_name}_{clean_packaging}".lower() if clean_packaging else clean_name.lower()
+    key_name = _normalize_name_for_key(clean_name)
+    clean_key = f"{key_name}_{clean_packaging.lower()}" if clean_packaging else key_name
     return clean_key, clean_name, clean_packaging
 
 
