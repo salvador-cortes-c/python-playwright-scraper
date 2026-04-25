@@ -41,6 +41,7 @@ def _parse_price_to_cents(value: str | None) -> int | None:
     try:
         return int(round(float(cleaned) * 100))
     except Exception:
+        print(f"WARNING: could not convert price value to cents: {value!r}", flush=True)
         return None
 
 
@@ -792,6 +793,20 @@ def persist_scrape_results(
                 supermarket_name = _infer_supermarket_name(store_name=store_name, source_url=snapshot.source_url)
                 supermarket_id = supermarket_name_to_id.get(supermarket_name)
 
+                price_cents_value = _parse_price_to_cents(snapshot.price)
+                promo_price_cents_value = _parse_price_to_cents(snapshot.promo_price)
+                if (
+                    price_cents_value is not None
+                    and promo_price_cents_value is not None
+                    and promo_price_cents_value >= price_cents_value
+                ):
+                    print(
+                        f"WARNING: promo_price ({snapshot.promo_price}) >= price ({snapshot.price})"
+                        f" for product '{snapshot.product_key}'; discarding promo_price",
+                        flush=True,
+                    )
+                    promo_price_cents_value = None
+
                 cur.execute(
                     """
                     INSERT INTO price_snapshots (
@@ -813,9 +828,9 @@ def persist_scrape_results(
                         snapshot.product_key,
                         store_id,
                         supermarket_id,
-                        _parse_price_to_cents(snapshot.price),
+                        price_cents_value,
                         snapshot.unit_price or "",
-                        _parse_price_to_cents(snapshot.promo_price),
+                        promo_price_cents_value,
                         snapshot.promo_unit_price or "",
                         _canonical_snapshot_source_url(snapshot.source_url),
                         snapshot.scraped_at,

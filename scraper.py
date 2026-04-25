@@ -3102,6 +3102,19 @@ def scrape_products_from_html(
         )
         product_key = _product_key(normalized_name, packaging_format)
 
+        if promo_price and price:
+            try:
+                if float(promo_price) >= float(price):
+                    print(
+                        f"WARNING: promo_price ({promo_price}) >= price ({price})"
+                        f" for '{name}' at {url}; discarding promo_price",
+                        flush=True,
+                    )
+                    promo_price = ""
+                    promo_unit_price = ""
+            except ValueError:
+                pass
+
         products.append(
             Product(
                 product_key=product_key,
