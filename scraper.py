@@ -3837,12 +3837,13 @@ async def main() -> None:
             skipped = len(resolved_urls) - len(targets)
             print(f"Resume enabled: skipping {skipped} already-completed URLs")
 
+        switched_to_fallback = False
+
         for current_url in targets:
             print(f"Scraping URL: {current_url}")
             rl_attempt = 0
             transient_attempt = 0
             products, snapshots = [], []
-            switched_to_fallback = False
 
             while True:
                 active_provider = fallback_provider if switched_to_fallback else provider
@@ -3864,10 +3865,10 @@ async def main() -> None:
                         print("✅ Fallback provider succeeded")
                     break
                 except (RateLimitError, TransientError, RuntimeError) as exc:
-                    # Rate limit / bot challenge on primary: switch to fallback immediately
+                    # Rate limit / bot challenge on primary: switch to fallback immediately and permanently
                     if isinstance(exc, RateLimitError) and not switched_to_fallback and fallback_provider is not None:
                         print(f"⚠️  Primary provider failed: {exc}")
-                        print("🔄 Switching to fallback provider (oxylabs)...")
+                        print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...")
                         switched_to_fallback = True
                         transient_attempt = 0
                         rl_attempt = 0
@@ -3881,7 +3882,7 @@ async def main() -> None:
                             if not switched_to_fallback and fallback_provider is not None:
                                 print(
                                     f"⚠️  Primary provider exhausted {transient_attempt} retries, "
-                                    f"switching to fallback provider (oxylabs)..."
+                                    f"permanently switching to fallback provider (oxylabs) for all remaining pages..."
                                 )
                                 switched_to_fallback = True
                                 transient_attempt = 0
@@ -3930,7 +3931,7 @@ async def main() -> None:
                     else:
                         print(f"ERROR: [{active_label}] {exc}")
                         if not switched_to_fallback and fallback_provider is not None:
-                            print("🔄 Switching to fallback provider (oxylabs)...")
+                            print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...")
                             switched_to_fallback = True
                             transient_attempt = 0
                             rl_attempt = 0
