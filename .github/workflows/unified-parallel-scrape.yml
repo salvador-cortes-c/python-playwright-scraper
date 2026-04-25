@@ -61,9 +61,10 @@ jobs:
             INCLUDES=$(echo "$INCLUDES" | jq -c --argjson entry "$ENTRY" '. + [$entry]')
           done
 
-          MATRIX=$(jq -c -n --argjson include "$INCLUDES" '{include: $include}')
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "Generated matrix: $MATRIX"
+          MATRIX=$(echo "$INCLUDES" | jq -c '{include: .}')
+          MATRIX_COMPACT=$(echo "$MATRIX" | jq -c -S .)
+          echo "matrix=${MATRIX_COMPACT}" >> "$GITHUB_OUTPUT"
+          echo "Generated matrix: ${MATRIX_COMPACT}"
 
   scrape:
     name: Scrape ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}
