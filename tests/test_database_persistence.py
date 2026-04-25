@@ -668,6 +668,153 @@ class DatabasePersistenceTests(unittest.TestCase):
         self.assertEqual(snapshots[0].price, "12.99")
         self.assertEqual(snapshots[0].promo_price, "9.99")
 
+    # ------------------------------------------------------------------
+    # Normalization edge cases: whitespace, case, special characters
+    # ------------------------------------------------------------------
+
+    def test_normalize_name_for_key_strips_leading_trailing_whitespace(self):
+        self.assertEqual(
+            _normalize_name_for_key("  Heineken Lager  "),
+            "  heineken lager  ",
+        )
+
+    def test_normalize_product_record_collapses_internal_whitespace_in_name(self):
+        """Multiple consecutive spaces in a name are collapsed to single spaces."""
+        normalized = _normalize_product_record("", "Heineken  Lager  Beer", "")
+        self.assertIsNotNone(normalized)
+        key, name, _ = normalized
+        self.assertEqual(name, "Heineken Lager Beer")
+        self.assertNotIn("  ", key)
+
+    def test_normalize_name_for_key_does_not_alter_apostrophes(self):
+        """Apostrophes in brand names (e.g. Wattie's) are preserved in the key."""
+        key = _normalize_name_for_key("Wattie's Baked Beans 420g")
+        self.assertIn("wattie's", key)
+
+    def test_normalize_name_for_key_only_replaces_word_connecting_hyphens(self):
+        """A hyphen between two words is replaced; a leading hyphen is left intact."""
+        # Word-connecting hyphen should be replaced with a space
+        self.assertEqual(
+            _normalize_name_for_key("Laid-Back Lager"),
+            "laid back lager",
+        )
+        # Hyphen not between word characters should not be changed
+        key_with_dash = _normalize_name_for_key("Green & Black's - Dark Chocolate")
+        self.assertNotIn("laid", key_with_dash)
+
+    # ------------------------------------------------------------------
+    # Pack-size mismatch edge cases
+    # ------------------------------------------------------------------
+
+    def test_normalize_packaging_handles_large_pack_count(self):
+        """24 x 330ml and 24x330ml are the same pack size."""
+        self.assertEqual(_normalize_packaging("24 x 330ml"), "24x330ml")
+        self.assertEqual(_normalize_packaging("24x330ml"), "24x330ml")
+
+    def test_normalize_packaging_handles_fractional_sizes(self):
+        """Fractional sizes like 1.5 l and 1.5l normalize identically."""
+        self.assertEqual(_normalize_packaging("1.5 l"), "1.5l")
+        self.assertEqual(_normalize_packaging("1.5l"), "1.5l")
+
+    def test_woolworths_1_pack_variant_gets_distinct_key_from_plain_size(self):
+        """A single-unit pack ('1 pack 330mL') should produce '1x330mL', not '330mL',
+        so it is distinguishable from a loose single-can listing."""
+        one_pack = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid Back Lager",
+            "1 pack 330mL",
+        )
+        plain = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid Back Lager",
+            "330mL",
+        )
+
+        self.assertIsNotNone(one_pack)
+        self.assertIsNotNone(plain)
+        self.assertNotEqual(one_pack[0], plain[0], "1-pack and plain 330mL should be distinct keys")
+        self.assertEqual(one_pack[2], "1x330mL")
+
+    def test_different_pack_counts_with_same_can_size_get_distinct_keys(self):
+        """6-pack and 12-pack of the same product must produce different product_keys."""
+        six = _normalize_product_record("", "Heineken Lager Beer Bottles", "6 x 330ml")
+        twelve = _normalize_product_record("", "Heineken Lager Beer Bottles", "12 x 330ml")
+
+        self.assertIsNotNone(six)
+        self.assertIsNotNone(twelve)
+        self.assertNotEqual(six[0], twelve[0])
+        self.assertEqual(six[2], "6x330ml")
+        self.assertEqual(twelve[2], "12x330ml")
+
+    def test_pack_size_with_uppercase_units_normalizes_consistently(self):
+        """'330ML' (uppercase) and '330ml' (lowercase) should produce the same packaging token."""
+        upper = _normalize_product_record("", "Test Beer", "6 x 330ML")
+        lower = _normalize_product_record("", "Test Beer", "6 x 330ml")
+
+        self.assertIsNotNone(upper)
+        self.assertIsNotNone(lower)
+        # The key comparison must be case-insensitive in the packaging portion
+        self.assertEqual(upper[0].lower(), lower[0].lower())
+
+    # ------------------------------------------------------------------
+    # Price-only name rejection edge cases
+    # ------------------------------------------------------------------
+
+    def test_normalize_product_record_rejects_price_with_unit(self):
+        self.assertIsNone(_normalize_product_record("", "3 kg", ""))
+        self.assertIsNone(_normalize_product_record("", "500ml", ""))
+        self.assertIsNone(_normalize_product_record("", "$1.99 ea", ""))
+
+    def test_normalize_product_record_accepts_real_product_names_with_prices_embedded(self):
+        """A name like '6 x 330ml Lager' contains a size but is not a price-only name."""
+        result = _normalize_product_record("", "Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml", "")
+        self.assertIsNotNone(result)
+
+    # ------------------------------------------------------------------
+    # Snapshot deduplication: richer field coverage
+    # ------------------------------------------------------------------
+
+    def test_dedupe_price_snapshots_exact_duplicate_is_collapsed_to_one(self):
+        """Two snapshots with the same product, store, source URL and all price fields
+        identical are treated as exact duplicates and collapsed to one entry."""
+        class Snapshot:
+            def __init__(self):
+                self.product_key = "abc_1kg"
+                self.supermarket_name = "New World Karori"
+                self.source_url = "https://www.newworld.co.nz/shop/category/pantry?pg=1"
+                self.scraped_at = "2026-04-04T06:00:00+00:00"
+                self.price = "4.99"
+                self.unit_price = "$4.99/kg"
+                self.promo_price = ""
+                self.promo_unit_price = ""
+
+        deduped = dedupe_price_snapshots([Snapshot(), Snapshot()])
+
+        self.assertEqual(len(deduped), 1)
+
+    def test_dedupe_price_snapshots_same_product_different_stores_are_kept(self):
+        """The same product at PAK'nSAVE and New World should produce two snapshots."""
+        class Snapshot:
+            def __init__(self, store_name, supermarket_name):
+                self.product_key = "heineken lager beer bottles_12x330ml"
+                self.supermarket_name = supermarket_name
+                self.store_name = store_name
+                self.source_url = "https://example.com/shop/category/beer?pg=1"
+                self.scraped_at = "2026-04-04T06:00:00+00:00"
+                self.price = "29.99"
+                self.unit_price = ""
+                self.promo_price = ""
+                self.promo_unit_price = ""
+
+        snapshots = [
+            Snapshot("PAKn'SAVE Kilbirnie", "Pak'nSave"),
+            Snapshot("New World Karori", "New World"),
+        ]
+
+        deduped = dedupe_price_snapshots(snapshots)
+
+        self.assertEqual(len(deduped), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

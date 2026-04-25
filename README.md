@@ -415,11 +415,106 @@ delay = min(base × 2^attempt, max) × uniform(0.75, 1.25)
 
 The ±25% jitter prevents multiple workers from retrying in sync.
 
+### Provider fallback strategy
+
+When a primary provider (e.g. `direct`) encounters a rate-limit or bot challenge, the scraper **permanently switches** to the Oxylabs fallback for all remaining pages in that run — it does not revert to the primary provider:
+
+```
+Start of run:
+  switched_to_fallback = False
+
+For each URL:
+  if not switched_to_fallback:
+    Try primary provider
+    On RateLimitError / exhausted transient retries → set switched_to_fallback = True
+  else:
+    Use Oxylabs (stays on fallback for the rest of the run)
+```
+
+This one-time switch prevents oscillating between providers per page and produces cleaner, more debuggable logs.  Woolworths pages frequently trigger Cloudflare challenges on the first request; after a single switch the run proceeds on Oxylabs.
+
+The fallback provider is always Oxylabs (if `OXYLABS_API_KEY` is set).  When no fallback API key is configured, transient errors cause a URL skip and rate-limit errors abort the run after exhausting retries.
+
+---
+
+## Product deduplication
+
+Product names differ across supermarkets for the same physical item — different abbreviations, brand name variants, and typos. The scraper applies a two-layer deduplication pipeline.
+
+### Layer 1 — Key normalization (happens at scrape time)
+
+`_normalize_name_for_key()` in `database.py` transforms product names before the `product_key` is generated so the same physical product maps to the same database row, regardless of which supermarket listed it:
+
+| Transformation | Example |
+|---|---|
+| Lowercase | `"Heineken Lager"` → `"heineken lager"` |
+| Word-connecting hyphens → spaces | `"Laid-Back"` → `"laid back"` |
+| Known misspelling corrections | `"Larger"` → `"lager"` |
+
+`_normalize_packaging()` canonicalises pack-size tokens so variants scraped with different notation produce the same key component:
+
+| Notation | Canonical form |
+|---|---|
+| `"6 x 330ml"` | `"6x330ml"` |
+| `"6 pack 330mL"` | `"6x330mL"` |
+| `"750 ml"` | `"750ml"` |
+
+**Result:** PAK'nSAVE `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` and New World `"Boundary Road Brewery Laid-Back Lager Cans 6 x 330ml"` → same `product_key`.  Woolworths `"Boundary Craft Beer Laid Back Larger"` (different brand phrase) → distinct `product_key`; handled by Layer 2.
+
+### Layer 2 — Semantic similarity deduplication (post-scrape batch job)
+
+`similarity_deduplication.py` uses sentence embeddings (`all-MiniLM-L6-v2`) to identify products with high cosine similarity across retailers and consolidates them:
+
+- **Auto-consolidate** above the similarity threshold (default 0.95): merge automatically.
+- **Export for review** between thresholds (default 0.85–0.95): write SQL migration suggestions.
+- **Pattern extraction**: record what was merged so Layer 1 corrections can be extended.
+
+Run via `scraper_deduplication_integration.py` after a scrape:
+
+```bash
+python scraper_deduplication_integration.py \
+  --auto-threshold 0.95 \
+  --review-threshold 0.85
+```
+
+Or pass `--dedup-auto-threshold` / `--dedup-review-threshold` to `scraper.py` directly (Layer 2 runs automatically after the scrape when `--persist-db` is active).
+
+### Legacy data migration
+
+To retroactively apply Layer 1 normalization to existing Neon DB records (rename keys, merge duplicates, redirect price snapshots and product_categories):
+
+```bash
+psql "$DATABASE_URL" -f db/retroactive_deduplicate_products.sql
+```
+
+This script is **idempotent** — re-running it after a partial execution is safe. A full audit trail is written to the `consolidation_log` table.
+
+To preview which records would change without applying them, wrap the script in a transaction and roll back:
+
+```bash
+psql "$DATABASE_URL" -c "BEGIN;" \
+  -f db/retroactive_deduplicate_products.sql \
+  -c "ROLLBACK;"
+```
+
 ---
 
 ## GitHub Actions
 
 The workflow `.github/workflows/scrape_provider.yml` is currently disabled for daily schedule, but it can still be triggered manually from the Actions tab.
+
+### Unified parallel scrape workflow
+
+The workflow `.github/workflows/unified-parallel-scrape.yml` supports scraping multiple supermarkets in parallel via a dynamically generated matrix.  Trigger it from the Actions tab with:
+
+| Input | Description |
+|---|---|
+| `supermarkets` | Comma-separated list: `newworld,paknsave,woolworths` |
+| `category_names` | Category to scrape, e.g. `Beer & Wine` |
+| `number_of_pages` | Number of pages per category (`all` for unlimited) |
+| `store_names` | Optional override for the store name |
+
+Each supermarket job uses the `direct` provider with automatic Oxylabs fallback.  Results are uploaded as artifacts (`scrape-results-<supermarket>-<run_id>`) retained for 7 days.
 
 ### Count workflow (stores + categories)
 
