@@ -9,6 +9,7 @@ from database import (
     _collect_category_rows,
     _find_category_id_for_source_url,
     _infer_supermarket_name,
+    _normalize_name_for_key,
     _normalize_product_record,
     _parse_price_to_cents,
     _snapshot_store_name,
@@ -35,6 +36,56 @@ class DatabasePersistenceTests(unittest.TestCase):
 
     def test_normalize_product_record_rejects_price_only_names(self):
         self.assertIsNone(_normalize_product_record("$ 5 00", "$ 5 00", ""))
+
+    def test_normalize_name_for_key_lowercases(self):
+        self.assertEqual(_normalize_name_for_key("Heineken Lager"), "heineken lager")
+
+    def test_normalize_name_for_key_replaces_word_connecting_hyphens_with_spaces(self):
+        self.assertEqual(
+            _normalize_name_for_key("Boundary Road Brewery Laid-Back Lager"),
+            "boundary road brewery laid back lager",
+        )
+
+    def test_normalize_name_for_key_corrects_larger_misspelling(self):
+        self.assertEqual(
+            _normalize_name_for_key("Boundary Craft Beer Laid Back Larger"),
+            "boundary craft beer laid back lager",
+        )
+
+    def test_normalize_name_for_key_handles_hyphen_and_misspelling_together(self):
+        self.assertEqual(
+            _normalize_name_for_key("Pale-Ale Larger"),
+            "pale ale lager",
+        )
+
+    def test_normalize_product_record_uses_normalized_key_but_preserves_display_name(self):
+        """Word-connecting hyphens are removed from the key; the display name is unchanged."""
+        normalized = _normalize_product_record(
+            "",
+            "Boundary Road Brewery Laid-Back Lager Cans",
+            "6x330ml",
+        )
+        self.assertEqual(
+            normalized,
+            (
+                "boundary road brewery laid back lager cans_6x330ml",
+                "Boundary Road Brewery Laid-Back Lager Cans",
+                "6x330ml",
+            ),
+        )
+
+    def test_normalize_product_record_corrects_misspelling_in_key_preserves_display_name(self):
+        """Known misspellings are corrected in the key; the display name is unchanged."""
+        normalized = _normalize_product_record(
+            "",
+            "Boundary Craft Beer Laid Back Larger",
+            "",
+        )
+        self.assertIsNotNone(normalized)
+        key, name, _ = normalized
+        self.assertIn("lager", key)
+        self.assertNotIn("larger", key)
+        self.assertEqual(name, "Boundary Craft Beer Laid Back Larger")
 
     def test_infer_supermarket_name_from_store_or_url(self):
         self.assertEqual(_infer_supermarket_name(store_name="New World Karori"), "New World")
