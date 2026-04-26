@@ -27,9 +27,8 @@ class DatabasePersistenceTests(unittest.TestCase):
             "",
         )
 
-        # "12x330mL" is stripped from the name portion of the key (it is
-        # already captured in the packaging suffix), so the key becomes
-        # "...bottle_12x330ml" instead of the old doubled "...bottle 12x330ml_12x330ml".
+        # "12x330mL" is stripped from the name-portion of the key (already
+        # captured in the packaging suffix), preventing key duplication.
         self.assertEqual(
             normalized,
             (
