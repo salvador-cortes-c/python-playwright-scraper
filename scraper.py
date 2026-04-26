@@ -3885,8 +3885,28 @@ async def main() -> None:
                         print(f"WARNING: {exc}", flush=True)
                         return []
                     except Exception as exc:
-                        print(f"WARNING: category discovery failed for {input_url}: {exc}", flush=True)
-                        categories = []
+                        if fallback_provider is not None:
+                            print(f"⚠️  Primary provider failed during category discovery for {input_url}: {exc}", flush=True)
+                            print(f"🔄 Trying fallback provider ({fallback_provider.name}) for category discovery...", flush=True)
+                            try:
+                                html = await fetch_html_or_raise(
+                                    session=session,
+                                    url=input_url,
+                                    provider=fallback_provider,
+                                )
+                                categories = discover_category_urls_from_html(
+                                    start_url=input_url,
+                                    html=html,
+                                    category_link_selector=args.category_link_selector,
+                                    category_name_selector=args.category_name_selector,
+                                )
+                                print(f"✅ Fallback provider succeeded for category discovery of {input_url}", flush=True)
+                            except Exception as fallback_exc:
+                                print(f"⚠️  Fallback provider also failed for category discovery: {fallback_exc}", flush=True)
+                                categories = []
+                        else:
+                            print(f"WARNING: category discovery failed for {input_url}: {exc}", flush=True)
+                            categories = []
 
                     discovered_categories_all.extend(categories)
                     categories_for_pagination = categories or categories_for_pagination

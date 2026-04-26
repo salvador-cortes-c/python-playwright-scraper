@@ -47,11 +47,10 @@ jobs:
             [paknsave]="https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1"
             [woolworths]="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48"
           )
-          # Woolworths blocks the direct HTTP provider (React SPA).
-          # PAKn'SAVE has Cloudflare protection that blocks headless browsers, so we use
-          # ZenRows (js_render + antibot) which is specifically designed to bypass Cloudflare.
-          # Woolworths continues to use Playwright for JS-rendered category discovery.
-          declare -A PROVIDER=( [newworld]="direct" [paknsave]="zenrows" [woolworths]="playwright" )
+          # PAKn'SAVE and New World use --provider direct with automatic oxylabs fallback.
+          # When direct is blocked by Cloudflare, the scraper automatically retries via Oxylabs.
+          # Woolworths uses Playwright because its store-picker requires browser-based interaction.
+          declare -A PROVIDER=( [newworld]="direct" [paknsave]="direct" [woolworths]="playwright" )
 
           INCLUDES="[]"
           IFS=',' read -ra SM_LIST <<< "$SUPERMARKETS"
@@ -242,15 +241,9 @@ jobs:
             echo "🗂️  Discovering all categories for ${{ matrix.supermarket }}"
           fi
           
-          # PAKn'SAVE: ZenRows uses js_render + antibot to bypass Cloudflare; give the
-          # React SPA 3 s to fully mount before returning HTML so category links are visible.
-          if [ "${{ matrix.provider }}" = "zenrows" ]; then
-            EXTRA_FLAGS+=(--render-wait-ms 3000)
-          fi
-          
           # Run scraper using the per-supermarket provider.
           # - newworld   → direct (with automatic oxylabs fallback)
-          # - paknsave   → zenrows (js_render + antibot bypasses Cloudflare)
+          # - paknsave   → direct (with automatic oxylabs fallback on Cloudflare challenge)
           # - woolworths → playwright (headless browser; React SPA needs JS rendering)
           python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
@@ -356,7 +349,7 @@ jobs:
           echo ""
           echo "⚙️  Providers used:"
           echo "   newworld   → direct     (with automatic oxylabs fallback)"
-          echo "   paknsave   → zenrows    (js_render + antibot bypasses Cloudflare)"
+          echo "   paknsave   → direct     (with automatic oxylabs fallback on Cloudflare challenge)"
           echo "   woolworths → playwright (headless browser; renders React SPA for category discovery)"
           echo ""
           echo "💾 Data persisted to PostgreSQL database"
@@ -381,7 +374,7 @@ jobs:
             echo "| Supermarket | Provider | Reason |"
             echo "|-------------|----------|--------|"
             echo "| newworld | \`direct\` (+ oxylabs fallback) | Standard HTTP works; Oxylabs auto-fallback on bot challenge |"
-            echo "| paknsave | \`zenrows\` (js_render + antibot) | Cloudflare blocks headless browsers; ZenRows antibot bypasses it |"
+            echo "| paknsave | \`direct\` (+ oxylabs fallback) | Tries direct first; Oxylabs auto-fallback when Cloudflare blocks |"
             echo "| woolworths | \`playwright\` | React SPA — category links require JavaScript rendering |"
             echo ""
             echo "## Per-supermarket results"
