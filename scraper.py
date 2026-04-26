@@ -70,6 +70,7 @@ class TransientError(RuntimeError):
 
 
 _CATEGORY_PATH_PREFIXES = ("/shop/category/", "/shop/browse/")
+_SITEMAP_CATEGORY_KEYWORDS = ("category", "catalog", "shop", "product")
 _DEFAULT_SITE_PROFILE = "newworld"
 _SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
     "newworld": {
@@ -2049,6 +2050,57 @@ def _discover_public_store_urls(site_profile: str) -> list[str]:
     return []
 
 
+def _discover_category_urls_from_sitemap(site_profile: str) -> list[str]:
+    """
+    Discover category URLs from the site's public XML sitemap.
+
+    This is used as a fallback when browser-based category discovery is blocked
+    (e.g. by Cloudflare on the PAKn'SAVE homepage).  The sitemaps are fetched
+    over plain HTTP without any Cloudflare challenge — they are publicly
+    accessible on all Foodstuffs-platform sites.
+
+    Returns a sorted, deduplicated list of category page URLs, or [] if none
+    are found or the sitemap is unavailable.
+    """
+    site = (site_profile or "").strip().lower()
+
+    if site == "paknsave":
+        base = "https://www.paknsave.co.nz"
+    elif site == "newworld":
+        base = "https://www.newworld.co.nz"
+    else:
+        return []
+
+    path_pattern = re.compile(r"/shop/category/", re.IGNORECASE)
+    base_host = urlparse(base).netloc
+
+    # Start from the root sitemap — it may be an index (sitemap of sitemaps)
+    # or contain category URLs directly.
+    all_urls = _fetch_public_sitemap_urls(f"{base}/sitemap.xml")
+
+    category_urls: set[str] = set()
+    sub_sitemaps: list[str] = []
+
+    for url in all_urls:
+        parsed = urlparse(url)
+        if path_pattern.search(parsed.path):
+            category_urls.add(url)
+        elif url.lower().endswith(".xml") and parsed.netloc == base_host:
+            sub_sitemaps.append(url)
+
+    # If the root sitemap was an index with no direct category URLs,
+    # follow sub-sitemaps that look category-related.
+    if not category_urls and sub_sitemaps:
+        for sub_url in sub_sitemaps:
+            slug = sub_url.lower()
+            if any(kw in slug for kw in _SITEMAP_CATEGORY_KEYWORDS):
+                for u in _fetch_public_sitemap_urls(sub_url):
+                    if path_pattern.search(urlparse(u).path):
+                        category_urls.add(u)
+
+    return sorted(category_urls)
+
+
 def _filter_store_urls_by_city(store_urls: list[str], store_cities: list[str]) -> list[str]:
     if not store_cities:
         return sorted(store_urls)
@@ -2653,7 +2705,34 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 f"WARNING: Category discovery failed for {input_url}: {exc}",
                                 flush=True,
                             )
-                            return []
+                            # Cloudflare often blocks only the homepage (category discovery
+                            # entry point) but not individual category pages.  Try to
+                            # recover by fetching category URLs from the public sitemap,
+                            # which is not protected by Cloudflare.
+                            sitemap_category_urls = _discover_category_urls_from_sitemap(args.site_profile)
+                            if sitemap_category_urls:
+                                print(
+                                    f"[Scraper] Sitemap fallback: discovered {len(sitemap_category_urls)} "
+                                    f"category URL(s) for {args.site_profile}.",
+                                    flush=True,
+                                )
+                                categories = [
+                                    CategoryLink(
+                                        # Derive a human-readable name from the last
+                                        # URL path segment (e.g. "beer-wine-and-cider"
+                                        # → "Beer Wine And Cider").
+                                        name=_category_name_from_url(u),
+                                        url=u,
+                                        source_url=input_url,
+                                    )
+                                    for u in sitemap_category_urls
+                                ]
+                            else:
+                                print(
+                                    "[Scraper] Sitemap fallback returned no category URLs; aborting.",
+                                    flush=True,
+                                )
+                                return []
                         discovered_categories_all.extend(categories)
                         categories_for_pagination = categories or categories_for_pagination
                         expanded_urls = [item.url for item in categories]

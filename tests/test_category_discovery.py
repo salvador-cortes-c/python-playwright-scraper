@@ -4,8 +4,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from unittest.mock import patch
+
 from scraper import (
     _detect_site_profile,
+    _discover_category_urls_from_sitemap,
     discover_category_page_urls_from_html,
     discover_category_urls_from_html,
     scrape_products_from_html,
@@ -633,6 +636,125 @@ class CategoryDiscoveryTests(unittest.TestCase):
         self.assertEqual(snapshots[0].promo_price, "")
         self.assertEqual(snapshots[0].unit_price, "")
         self.assertEqual(snapshots[0].promo_unit_price, "")
+
+
+class SitemapCategoryDiscoveryTests(unittest.TestCase):
+    """Tests for the sitemap-based category URL discovery fallback."""
+
+    def test_returns_empty_for_unsupported_site_profile(self):
+        self.assertEqual(_discover_category_urls_from_sitemap("woolworths"), [])
+        self.assertEqual(_discover_category_urls_from_sitemap("unknown"), [])
+        self.assertEqual(_discover_category_urls_from_sitemap(""), [])
+
+    def test_returns_empty_when_sitemap_unreachable(self):
+        with patch("scraper._fetch_public_sitemap_urls", return_value=[]):
+            result = _discover_category_urls_from_sitemap("paknsave")
+        self.assertEqual(result, [])
+
+    def test_discovers_category_urls_directly_from_flat_sitemap(self):
+        flat_sitemap_urls = [
+            "https://www.paknsave.co.nz/shop/category/beer-wine-and-cider",
+            "https://www.paknsave.co.nz/shop/category/fruit-and-vegetables",
+            "https://www.paknsave.co.nz/shop/category/dairy-eggs-and-fridge",
+            "https://www.paknsave.co.nz/",  # homepage — should be excluded
+            "https://www.paknsave.co.nz/about",  # non-category — should be excluded
+        ]
+
+        with patch("scraper._fetch_public_sitemap_urls", return_value=flat_sitemap_urls):
+            result = _discover_category_urls_from_sitemap("paknsave")
+
+        self.assertEqual(
+            result,
+            [
+                "https://www.paknsave.co.nz/shop/category/beer-wine-and-cider",
+                "https://www.paknsave.co.nz/shop/category/dairy-eggs-and-fridge",
+                "https://www.paknsave.co.nz/shop/category/fruit-and-vegetables",
+            ],
+        )
+
+    def test_follows_sub_sitemaps_when_root_has_no_category_urls(self):
+        sitemap_index_urls = [
+            "https://www.paknsave.co.nz/sitemap_category.xml",
+            "https://www.paknsave.co.nz/sitemap_stores.xml",
+        ]
+        category_sitemap_urls = [
+            "https://www.paknsave.co.nz/shop/category/meat-and-seafood",
+            "https://www.paknsave.co.nz/shop/category/frozen",
+        ]
+        stores_sitemap_urls = [
+            "https://www.paknsave.co.nz/lower-north-island/kilbirnie/paknsave-kilbirnie",
+        ]
+
+        def fake_fetch(url: str):
+            if url.endswith("/sitemap.xml"):
+                return sitemap_index_urls
+            if "sitemap_category" in url:
+                return category_sitemap_urls
+            if "sitemap_stores" in url:
+                return stores_sitemap_urls
+            return []
+
+        with patch("scraper._fetch_public_sitemap_urls", side_effect=fake_fetch):
+            result = _discover_category_urls_from_sitemap("paknsave")
+
+        self.assertEqual(
+            result,
+            [
+                "https://www.paknsave.co.nz/shop/category/frozen",
+                "https://www.paknsave.co.nz/shop/category/meat-and-seafood",
+            ],
+        )
+
+    def test_skips_sub_sitemaps_without_category_related_keywords(self):
+        sitemap_index_urls = [
+            "https://www.paknsave.co.nz/sitemap_brands.xml",  # no category keyword
+        ]
+        brands_sitemap_urls = [
+            "https://www.paknsave.co.nz/lower-north-island/kilbirnie/paknsave-kilbirnie",
+        ]
+
+        def fake_fetch(url: str):
+            if url.endswith("/sitemap.xml"):
+                return sitemap_index_urls
+            if "sitemap_brands" in url:
+                return brands_sitemap_urls
+            return []
+
+        with patch("scraper._fetch_public_sitemap_urls", side_effect=fake_fetch):
+            result = _discover_category_urls_from_sitemap("paknsave")
+
+        self.assertEqual(result, [])
+
+    def test_deduplicates_and_sorts_category_urls(self):
+        duplicate_urls = [
+            "https://www.paknsave.co.nz/shop/category/beer-wine-and-cider",
+            "https://www.paknsave.co.nz/shop/category/beer-wine-and-cider",
+            "https://www.paknsave.co.nz/shop/category/frozen",
+            "https://www.paknsave.co.nz/shop/category/frozen",
+        ]
+
+        with patch("scraper._fetch_public_sitemap_urls", return_value=duplicate_urls):
+            result = _discover_category_urls_from_sitemap("paknsave")
+
+        self.assertEqual(
+            result,
+            [
+                "https://www.paknsave.co.nz/shop/category/beer-wine-and-cider",
+                "https://www.paknsave.co.nz/shop/category/frozen",
+            ],
+        )
+
+    def test_works_for_newworld_site_profile(self):
+        newworld_sitemap = [
+            "https://www.newworld.co.nz/shop/category/fruit-and-vegetables",
+            "https://www.newworld.co.nz/shop/category/bakery",
+        ]
+
+        with patch("scraper._fetch_public_sitemap_urls", return_value=newworld_sitemap):
+            result = _discover_category_urls_from_sitemap("newworld")
+
+        self.assertIn("https://www.newworld.co.nz/shop/category/fruit-and-vegetables", result)
+        self.assertIn("https://www.newworld.co.nz/shop/category/bakery", result)
 
 
 if __name__ == "__main__":
