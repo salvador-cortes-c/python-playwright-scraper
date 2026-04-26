@@ -286,10 +286,12 @@ jobs:
             echo "   ⚠️  Snapshots file not found: $SNAPSHOTS_FILE"
           fi
           
+          SCRAPE_FAILED=false
           if [ "$PRODUCT_COUNT" = "0" ] && [ "$SNAPSHOT_COUNT" = "0" ]; then
             HEALTH_ICON="❌"
             HEALTH_STATUS="No data scraped — check provider logs for bot-challenge or timeout errors."
-            echo "::warning::No products or price snapshots were scraped for $SUPERMARKET. Check provider logs above."
+            echo "::error::No products or price snapshots were scraped for $SUPERMARKET. Check the 'Run scraper with automatic provider fallback' step logs for details (Cloudflare block, provider error, or timeout)."
+            SCRAPE_FAILED=true
           elif [ "$PRODUCT_COUNT" -lt 10 ] 2>/dev/null; then
             HEALTH_ICON="⚠️"
             HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete (homepage fallback or bot challenge)."
@@ -316,6 +318,10 @@ jobs:
             echo "| **Price snapshots** | **$SNAPSHOT_COUNT** |"
             echo "| Status | $HEALTH_STATUS |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SCRAPE_FAILED" = "true" ]; then
+            exit 1
+          fi
 
       - name: Upload artifacts
         if: always()

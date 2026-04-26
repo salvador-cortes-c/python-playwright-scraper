@@ -2646,7 +2646,13 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 args=args,
                             )
                         except RateLimitError as exc:
-                            print(f"WARNING: {exc}")
+                            print(f"WARNING: {exc}", flush=True)
+                            return []
+                        except RuntimeError as exc:
+                            print(
+                                f"WARNING: Category discovery failed for {input_url}: {exc}",
+                                flush=True,
+                            )
                             return []
                         discovered_categories_all.extend(categories)
                         categories_for_pagination = categories or categories_for_pagination
