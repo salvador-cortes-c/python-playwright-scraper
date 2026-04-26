@@ -20,7 +20,7 @@ class _FakeCursor:
     """Minimal cursor stub that supports execute/fetchone/rowcount."""
 
     def __init__(self, rows_by_query: dict):
-        self._rows = rows_by_query  # maps (query_fragment, param) → row_or_None
+        self._rows = rows_by_query  # maps param_value → row_or_None
         self.rowcount = 0
         self._last_params: tuple = ()
 
