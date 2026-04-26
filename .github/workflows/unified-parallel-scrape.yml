@@ -19,6 +19,10 @@ on:
         description: 'Optional comma-separated store names (default stores will be used if empty)'
         required: false
         default: ''
+      timeout_minutes:
+        description: 'Per-job timeout in minutes (default: 120; increase for "all" categories across large sites)'
+        required: false
+        default: '120'
 
 permissions:
   contents: read
@@ -69,7 +73,7 @@ jobs:
   scrape:
     name: Scrape ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: ${{ fromJson(github.event.inputs.timeout_minutes || '120') }}
     needs: setup
     strategy:
       fail-fast: false
@@ -233,7 +237,7 @@ jobs:
           
           # Run scraper with automatic provider fallback (direct → oxylabs)
           # The scraper will handle provider fallback internally
-          python scraper.py \
+          python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
             --site-profile ${{ matrix.site_profile }} \
             --provider direct \
