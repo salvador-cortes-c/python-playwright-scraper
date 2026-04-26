@@ -70,6 +70,7 @@ class TransientError(RuntimeError):
 
 
 _CATEGORY_PATH_PREFIXES = ("/shop/category/", "/shop/browse/")
+_SITEMAP_CATEGORY_KEYWORDS = ("category", "catalog", "shop", "product")
 _DEFAULT_SITE_PROFILE = "newworld"
 _SITE_PROFILE_DEFAULTS: dict[str, dict[str, str | None]] = {
     "newworld": {
@@ -2092,7 +2093,7 @@ def _discover_category_urls_from_sitemap(site_profile: str) -> list[str]:
     if not category_urls and sub_sitemaps:
         for sub_url in sub_sitemaps:
             slug = sub_url.lower()
-            if any(kw in slug for kw in ("category", "catalog", "shop", "product")):
+            if any(kw in slug for kw in _SITEMAP_CATEGORY_KEYWORDS):
                 for u in _fetch_public_sitemap_urls(sub_url):
                     if path_pattern.search(urlparse(u).path):
                         category_urls.add(u)
@@ -2717,6 +2718,9 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 )
                                 categories = [
                                     CategoryLink(
+                                        # Derive a human-readable name from the last
+                                        # URL path segment (e.g. "beer-wine-and-cider"
+                                        # → "Beer Wine And Cider").
                                         name=_category_name_from_url(u),
                                         url=u,
                                         source_url=input_url,
