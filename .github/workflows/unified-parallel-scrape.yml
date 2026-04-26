@@ -296,7 +296,7 @@ jobs:
           elif [ "$PRODUCT_COUNT" -lt 10 ] 2>/dev/null; then
             HEALTH_ICON="⚠️"
             HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete (homepage fallback, bot challenge, or max-pages cap). Check scraper logs for '--max-pages cap applied' and 'Pagination discovery' lines."
-            echo "::warning::Only $PRODUCT_COUNT product(s) scraped for $SUPERMARKET — may be incomplete. Search logs for '--max-pages cap' or 'failed pagination discovery' to diagnose."
+            echo "::warning::Only $PRODUCT_COUNT product(s) scraped for $SUPERMARKET — may be incomplete. Search logs for '--max-pages cap applied' or '[Scraper] Pagination discovery complete' to diagnose."
           else
             HEALTH_ICON="✅"
             HEALTH_STATUS="Healthy — $PRODUCT_COUNT products and $SNAPSHOT_COUNT price snapshots scraped."

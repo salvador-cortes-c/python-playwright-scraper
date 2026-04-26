@@ -2782,9 +2782,8 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                         print(
                             f"[Scraper] Pagination discovery complete: "
                             f"{len(pagination_ok)} succeeded, "
-                            f"{len(pagination_failed)}/{total_cats} failed "
-                            f"(defaulted to 1 page each) — "
-                            f"{len(paginated_urls)} total page URL(s) queued",
+                            f"{len(pagination_failed)} failed (of {total_cats} total) — "
+                            f"{len(paginated_urls)} page URL(s) queued",
                             flush=True,
                         )
                         if pagination_failed:
@@ -4054,11 +4053,10 @@ async def main() -> None:
                     total_cats = len(categories_for_pagination)
                     print(
                         f"[Scraper] Pagination discovery complete: "
-                        f"{len(pagination_ok)} direct, "
-                        f"{len(pagination_fallback_ok)} via fallback, "
-                        f"{len(pagination_failed)}/{total_cats} failed "
-                        f"(defaulted to 1 page each) — "
-                        f"{len(paginated_urls)} total page URL(s) queued",
+                        f"{len(pagination_ok)} direct ok, "
+                        f"{len(pagination_fallback_ok)} fallback ok, "
+                        f"{len(pagination_failed)} failed (of {total_cats} total) — "
+                        f"{len(paginated_urls)} page URL(s) queued",
                         flush=True,
                     )
                     if pagination_failed:
