@@ -217,6 +217,7 @@ jobs:
           OXYLABS_USERNAME: ${{ secrets.OXYLABS_USERNAME }}
           OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONUNBUFFERED: '1'
         run: |
           echo "🚀 Starting scrape for ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}"
           echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
