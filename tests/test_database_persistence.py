@@ -14,6 +14,7 @@ from database import (
     _normalize_product_record,
     _parse_price_to_cents,
     _snapshot_store_name,
+    _strip_packaging_suffix_for_key,
     dedupe_price_snapshots,
 )
 
@@ -26,10 +27,13 @@ class DatabasePersistenceTests(unittest.TestCase):
             "",
         )
 
+        # "12x330mL" is stripped from the name portion of the key (it is
+        # already captured in the packaging suffix), so the key becomes
+        # "...bottle_12x330ml" instead of the old doubled "...bottle 12x330ml_12x330ml".
         self.assertEqual(
             normalized,
             (
-                "asahi beer super dry lager bottle 12x330ml_12x330ml",
+                "asahi beer super dry lager bottle_12x330ml",
                 "Asahi Beer Super Dry Lager Bottle 12x330mL",
                 "12x330mL",
             ),
@@ -818,6 +822,96 @@ class DatabasePersistenceTests(unittest.TestCase):
         deduped = dedupe_price_snapshots(snapshots)
 
         self.assertEqual(len(deduped), 2)
+
+    # ------------------------------------------------------------------
+    # _strip_packaging_suffix_for_key
+    # ------------------------------------------------------------------
+
+    def test_strip_packaging_suffix_strips_trailing_size(self):
+        """Plain trailing size token is removed."""
+        self.assertEqual(_strip_packaging_suffix_for_key("Squealing Pig Rose 750mL"), "Squealing Pig Rose")
+        self.assertEqual(_strip_packaging_suffix_for_key("Heineken Lager 330mL"), "Heineken Lager")
+
+    def test_strip_packaging_suffix_strips_multipack_size(self):
+        """Multi-pack trailing token is removed."""
+        self.assertEqual(
+            _strip_packaging_suffix_for_key("Asahi Super Dry Lager Bottle 12x330mL"),
+            "Asahi Super Dry Lager Bottle",
+        )
+
+    def test_strip_packaging_suffix_strips_size_with_spaces(self):
+        """'6 x 330ml' (space-separated multiplier) is stripped."""
+        self.assertEqual(
+            _strip_packaging_suffix_for_key("Boundary Road Lager Cans 6 x 330ml"),
+            "Boundary Road Lager Cans",
+        )
+
+    def test_strip_packaging_suffix_strips_multiple_trailing_tokens(self):
+        """Consecutive trailing tokens (e.g. '6 pack 330mL') are both removed."""
+        self.assertEqual(
+            _strip_packaging_suffix_for_key("Boundary Road Lager 6 pack 330mL"),
+            "Boundary Road Lager",
+        )
+
+    def test_strip_packaging_suffix_unchanged_when_no_trailing_token(self):
+        """Name with no trailing size token is returned unchanged."""
+        self.assertEqual(
+            _strip_packaging_suffix_for_key("Boundary Road Lager Cans"),
+            "Boundary Road Lager Cans",
+        )
+
+    def test_strip_packaging_suffix_does_not_strip_entire_name(self):
+        """If stripping would leave an empty string, the original name is returned."""
+        self.assertEqual(_strip_packaging_suffix_for_key("750mL"), "750mL")
+        self.assertEqual(_strip_packaging_suffix_for_key("12x330mL"), "12x330mL")
+
+    # ------------------------------------------------------------------
+    # Cross-store deduplication via packaging-in-name stripping
+    # ------------------------------------------------------------------
+
+    def test_size_in_name_and_explicit_packaging_produce_same_key(self):
+        """A store that includes the size in the product title and one that
+        doesn't must produce the same product_key when packaging_format is
+        identical, so they collapse to a single DB record."""
+        with_size = _normalize_product_record("", "Squealing Pig Rose 750mL", "750mL")
+        without_size = _normalize_product_record("", "Squealing Pig Rose", "750mL")
+
+        self.assertIsNotNone(with_size)
+        self.assertIsNotNone(without_size)
+        self.assertEqual(
+            with_size[0],
+            without_size[0],
+            "Packaging size embedded in name vs. absent should yield the same product_key",
+        )
+
+    def test_packaging_size_not_duplicated_in_key(self):
+        """When the name ends with the packaging size, that size should appear
+        exactly once in the product_key (in the packaging suffix only)."""
+        result = _normalize_product_record("", "Heineken Lager 330mL", "330mL")
+        self.assertIsNotNone(result)
+        key, _, _ = result
+        self.assertEqual(
+            key.count("330ml"),
+            1,
+            "Packaging size must not appear twice in the product_key",
+        )
+
+    def test_multipack_size_in_name_and_explicit_packaging_produce_same_key(self):
+        """Multi-pack size embedded in name deduplicates against explicit packaging."""
+        with_size = _normalize_product_record(
+            "", "Speight's Summit Lager Bottle 24x330mL", "24x330mL"
+        )
+        without_size = _normalize_product_record(
+            "", "Speight's Summit Lager Bottle", "24x330mL"
+        )
+
+        self.assertIsNotNone(with_size)
+        self.assertIsNotNone(without_size)
+        self.assertEqual(
+            with_size[0],
+            without_size[0],
+            "Multi-pack size in name should not create a separate product_key",
+        )
 
 
 if __name__ == "__main__":
