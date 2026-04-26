@@ -332,6 +332,30 @@ COMMIT;
 
         with psycopg.connect(self.db_url) as conn:
             with conn.cursor() as cur:
+                # Guard: canonical key must exist in products before redirecting
+                # snapshots (price_snapshots has a FK on products.product_key).
+                cur.execute(
+                    "SELECT 1 FROM products WHERE product_key = %s",
+                    (canonical_key,),
+                )
+                if not cur.fetchone():
+                    raise ValueError(
+                        f"Canonical product key '{canonical_key}' not found in the "
+                        "products table; skipping consolidation to prevent FK violations."
+                    )
+
+                # Guard: source key must also still exist (may already have been
+                # consolidated by an earlier iteration in the same run).
+                cur.execute(
+                    "SELECT 1 FROM products WHERE product_key = %s",
+                    (source_key,),
+                )
+                if not cur.fetchone():
+                    raise ValueError(
+                        f"Source product key '{source_key}' not found in the "
+                        "products table; it may have already been consolidated."
+                    )
+
                 # Redirect price snapshots
                 cur.execute(
                     "UPDATE price_snapshots SET product_key = %s WHERE product_key = %s",
