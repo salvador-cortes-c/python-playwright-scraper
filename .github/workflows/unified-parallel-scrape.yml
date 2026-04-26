@@ -47,10 +47,10 @@ jobs:
             [paknsave]="https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1"
             [woolworths]="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48"
           )
-          # Woolworths and PAKn'SAVE block the direct HTTP provider (React SPA / Cloudflare).
-          # Use the Playwright (headless-browser) provider for these sites so that
-          # category discovery and product scraping work reliably.
-          declare -A PROVIDER=( [newworld]="direct" [paknsave]="playwright" [woolworths]="playwright" )
+          # PAKn'SAVE and New World use --provider direct with automatic oxylabs fallback.
+          # When direct is blocked by Cloudflare, the scraper automatically retries via Oxylabs.
+          # Woolworths uses Playwright because its store-picker requires browser-based interaction.
+          declare -A PROVIDER=( [newworld]="direct" [paknsave]="direct" [woolworths]="playwright" )
 
           INCLUDES="[]"
           IFS=',' read -ra SM_LIST <<< "$SUPERMARKETS"
@@ -242,10 +242,9 @@ jobs:
           fi
           
           # Run scraper using the per-supermarket provider.
-          # Woolworths and PAKn'SAVE use --provider playwright (headless browser) because:
-          #   - Woolworths is a React SPA that needs JS rendering for category discovery
-          #   - PAKn'SAVE has Cloudflare protection that blocks plain HTTP requests
-          # New World uses --provider direct with automatic oxylabs fallback.
+          # - newworld   → direct (with automatic oxylabs fallback)
+          # - paknsave   → direct (with automatic oxylabs fallback on Cloudflare challenge)
+          # - woolworths → playwright (headless browser; React SPA needs JS rendering)
           python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
             --site-profile ${{ matrix.site_profile }} \
@@ -350,7 +349,7 @@ jobs:
           echo ""
           echo "⚙️  Providers used:"
           echo "   newworld   → direct     (with automatic oxylabs fallback)"
-          echo "   paknsave   → playwright (headless browser; bypasses Cloudflare)"
+          echo "   paknsave   → direct     (with automatic oxylabs fallback on Cloudflare challenge)"
           echo "   woolworths → playwright (headless browser; renders React SPA for category discovery)"
           echo ""
           echo "💾 Data persisted to PostgreSQL database"
@@ -375,7 +374,7 @@ jobs:
             echo "| Supermarket | Provider | Reason |"
             echo "|-------------|----------|--------|"
             echo "| newworld | \`direct\` (+ oxylabs fallback) | Standard HTTP works; Oxylabs auto-fallback on bot challenge |"
-            echo "| paknsave | \`playwright\` | Cloudflare protection blocks plain HTTP; headless browser bypasses it |"
+            echo "| paknsave | \`direct\` (+ oxylabs fallback) | Tries direct first; Oxylabs auto-fallback when Cloudflare blocks |"
             echo "| woolworths | \`playwright\` | React SPA — category links require JavaScript rendering |"
             echo ""
             echo "## Per-supermarket results"
