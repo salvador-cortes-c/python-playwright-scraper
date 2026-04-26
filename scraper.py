@@ -2746,6 +2746,8 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
 
                     if args.crawl_category_pages or args.count_category_pages:
                         paginated_urls: list[str] = []
+                        pagination_ok: list[str] = []
+                        pagination_failed: list[str] = []
                         for cat_idx, category in enumerate(categories_for_pagination, 1):
                             category_url = category.url
                             print(
@@ -2755,12 +2757,14 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                             )
                             try:
                                 pages = await discover_category_page_urls_playwright(page, category_url, args)
+                                pagination_ok.append(category.name or category_url)
                             except RateLimitError as exc:
                                 print(f"WARNING: {exc}")
                                 return []
                             except Exception as exc:
                                 print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
                                 pages = [category_url]
+                                pagination_failed.append(category.name or category_url)
 
                             print(f"[Scraper]   → {len(pages)} page URL(s) for: {category_url}", flush=True)
                             if args.count_category_pages:
@@ -2774,6 +2778,20 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                                 wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
                                 await page.wait_for_timeout(int(wait_seconds * 1000))
 
+                        total_cats = len(categories_for_pagination)
+                        print(
+                            f"[Scraper] Pagination discovery complete: "
+                            f"{len(pagination_ok)} succeeded, "
+                            f"{len(pagination_failed)} failed (of {total_cats} total) — "
+                            f"{len(paginated_urls)} page URL(s) queued",
+                            flush=True,
+                        )
+                        if pagination_failed:
+                            print(
+                                f"[Scraper] Categories with failed pagination discovery: "
+                                f"{', '.join(pagination_failed)}",
+                                flush=True,
+                            )
                         expanded_urls = paginated_urls
 
                     for expanded_url in expanded_urls:
@@ -2821,7 +2839,14 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
                 completed_set = set(progress.completed_urls) if args.resume else set()
                 targets = [current for current in to_scrape if current not in completed_set]
                 if args.max_pages is not None:
+                    uncapped = len(targets)
                     targets = targets[: max(0, args.max_pages)]
+                    if len(targets) < uncapped:
+                        print(
+                            f"[Scraper] --max-pages {args.max_pages} cap applied: "
+                            f"scraping {len(targets)} of {uncapped} total page URL(s)",
+                            flush=True,
+                        )
                 if args.resume:
                     print(f"Resume enabled: skipping {len(to_scrape) - len(targets)} already-completed URLs")
 
@@ -3339,6 +3364,43 @@ async def scrape_url(
     return products, snapshots
 
 
+def _summarise_provider_error(error: Any, status: int | None) -> str:
+    """Return a short, human-readable summary of a provider error dict.
+
+    Avoids logging full JSON payloads (e.g. the verbose Oxylabs job object)
+    while still surfacing the most useful diagnostic information.
+    """
+    if not isinstance(error, dict):
+        return str(error)[:300]
+
+    # Top-level shortcut fields used by most providers
+    simple_error = error.get("error")
+    if isinstance(simple_error, str) and simple_error:
+        response_preview = ""
+        raw_response = error.get("response", "")
+        if isinstance(raw_response, str) and raw_response.strip():
+            response_preview = f" | response: {raw_response[:120]}"
+        return f"{simple_error}{response_preview}"
+
+    # Oxylabs wraps its job result under a 'results' list
+    results = error.get("results")
+    if isinstance(results, list) and results:
+        first = results[0]
+        if isinstance(first, dict):
+            sc = first.get("status_code", status)
+            content_preview = str(first.get("content", ""))[:120]
+            reason = f"status_code={sc}"
+            if content_preview:
+                reason += f" | content: {content_preview}"
+            job_status = (error.get("job") or {}).get("status", "")
+            if job_status:
+                reason += f" | job_status={job_status}"
+            return reason
+
+    # Fallback: represent as compact JSON-like string, capped at 300 chars
+    return str(error)[:300]
+
+
 async def fetch_html_or_raise(
     session: aiohttp.ClientSession,
     url: str,
@@ -3350,7 +3412,7 @@ async def fetch_html_or_raise(
         body = str(error).lower()
         if _is_rate_limited(status, title, body):
             raise RateLimitError(f"Cloudflare rate limit detected while resolving {url} (Error 1015/429).")
-        raise RuntimeError(f"Unable to fetch {url}: {error}")
+        raise RuntimeError(f"Unable to fetch {url}: {_summarise_provider_error(error, status)}")
 
     if not html:
         raise RuntimeError(f"No HTML returned for {url}")
@@ -3461,7 +3523,11 @@ async def main() -> None:
         "--max-pages",
         type=_parse_max_pages,
         default=None,
-        help="Maximum number of resolved URLs (pages) to scrape. Pass 'all' to scrape every page without a cap.",
+        help=(
+            "Maximum total number of resolved page URLs to scrape across ALL categories. "
+            "Pass 'all' to scrape every page without a cap. "
+            "Note: this is a global cap on the full URL list, not a per-category limit."
+        ),
     )
     parser.add_argument(
         "--count-only",
@@ -3922,6 +3988,9 @@ async def main() -> None:
 
                 if args.crawl_category_pages or args.count_category_pages:
                     paginated_urls: list[str] = []
+                    pagination_ok: list[str] = []
+                    pagination_fallback_ok: list[str] = []
+                    pagination_failed: list[str] = []
                     for cat_idx, category in enumerate(categories_for_pagination, 1):
                         category_url = category.url
                         print(
@@ -3936,12 +4005,17 @@ async def main() -> None:
                                 provider=provider,
                             )
                             pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
+                            pagination_ok.append(category.name or category_url)
                         except RateLimitError as exc:
                             print(f"WARNING: {exc}", flush=True)
                             return []
                         except Exception as exc:
                             if fallback_provider is not None:
-                                print(f"⚠️  Primary provider failed during pagination discovery for {category_url}: {exc}", flush=True)
+                                print(
+                                    f"⚠️  Primary provider failed during pagination discovery for "
+                                    f"{category_url}: {exc}",
+                                    flush=True,
+                                )
                                 print(f"🔄 Trying fallback provider ({fallback_provider.name}) for pagination discovery...", flush=True)
                                 try:
                                     html = await fetch_html_or_raise(
@@ -3951,12 +4025,18 @@ async def main() -> None:
                                     )
                                     pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
                                     print(f"✅ Fallback provider succeeded for pagination discovery of {category_url}", flush=True)
+                                    pagination_fallback_ok.append(category.name or category_url)
                                 except Exception as fallback_exc:
-                                    print(f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}", flush=True)
+                                    print(
+                                        f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}",
+                                        flush=True,
+                                    )
                                     pages = [category_url]
+                                    pagination_failed.append(category.name or category_url)
                             else:
                                 print(f"WARNING: pagination discovery failed for {category_url}: {exc}", flush=True)
                                 pages = [category_url]
+                                pagination_failed.append(category.name or category_url)
 
                         print(f"[Scraper]   → {len(pages)} page URL(s) for: {category_url}", flush=True)
                         if args.count_category_pages:
@@ -3970,6 +4050,21 @@ async def main() -> None:
                             wait_seconds = max(0.0, float(args.delay_seconds)) + random.random() * jitter
                             await asyncio.sleep(wait_seconds)
 
+                    total_cats = len(categories_for_pagination)
+                    print(
+                        f"[Scraper] Pagination discovery complete: "
+                        f"{len(pagination_ok)} direct ok, "
+                        f"{len(pagination_fallback_ok)} fallback ok, "
+                        f"{len(pagination_failed)} failed (of {total_cats} total) — "
+                        f"{len(paginated_urls)} page URL(s) queued",
+                        flush=True,
+                    )
+                    if pagination_failed:
+                        print(
+                            f"[Scraper] Categories with failed pagination discovery: "
+                            f"{', '.join(pagination_failed)}",
+                            flush=True,
+                        )
                     expanded_urls = paginated_urls
 
                 for expanded_url in expanded_urls:
@@ -4012,7 +4107,14 @@ async def main() -> None:
         completed_set = set(progress.completed_urls) if args.resume else set()
         targets = [url for url in resolved_urls if url not in completed_set]
         if args.max_pages is not None:
+            uncapped = len(targets)
             targets = targets[: max(0, args.max_pages)]
+            if len(targets) < uncapped:
+                print(
+                    f"[Scraper] --max-pages {args.max_pages} cap applied: "
+                    f"scraping {len(targets)} of {uncapped} total page URL(s)",
+                    flush=True,
+                )
         if args.resume:
             skipped = len(resolved_urls) - len(targets)
             print(f"Resume enabled: skipping {skipped} already-completed URLs")

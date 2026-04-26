@@ -227,6 +227,7 @@ jobs:
           OXYLABS_PASSWORD: ${{ secrets.OXYLABS_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: '1'
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
         run: |
           echo "🚀 Starting scrape for ${{ matrix.supermarket }} - ${{ github.event.inputs.category_names }}"
           echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
@@ -266,9 +267,10 @@ jobs:
           SNAPSHOTS_FILE="price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json"
           SUPERMARKET="${{ matrix.supermarket }}"
           PROVIDER="${{ matrix.provider }}"
-          
+          MAX_PAGES="${{ steps.max_pages.outputs.max_pages }}"
+
           echo "📊 Verifying scrape results for $SUPERMARKET (provider: $PROVIDER)..."
-          
+
           if [ -f "$PRODUCTS_FILE" ]; then
             PRODUCT_COUNT=$(python -c "import json,sys; data=json.load(open('$PRODUCTS_FILE')); print(len(data) if isinstance(data,list) else 0)" 2>/dev/null || echo "0")
             echo "   Products scraped: $PRODUCT_COUNT"
@@ -276,7 +278,7 @@ jobs:
             PRODUCT_COUNT=0
             echo "   ⚠️  Products file not found: $PRODUCTS_FILE"
           fi
-          
+
           if [ -f "$SNAPSHOTS_FILE" ]; then
             SNAPSHOT_COUNT=$(python -c "import json,sys; data=json.load(open('$SNAPSHOTS_FILE')); print(len(data) if isinstance(data,list) else 0)" 2>/dev/null || echo "0")
             echo "   Price snapshots scraped: $SNAPSHOT_COUNT"
@@ -284,7 +286,7 @@ jobs:
             SNAPSHOT_COUNT=0
             echo "   ⚠️  Snapshots file not found: $SNAPSHOTS_FILE"
           fi
-          
+
           SCRAPE_FAILED=false
           if [ "$PRODUCT_COUNT" = "0" ] && [ "$SNAPSHOT_COUNT" = "0" ]; then
             HEALTH_ICON="❌"
@@ -293,14 +295,14 @@ jobs:
             SCRAPE_FAILED=true
           elif [ "$PRODUCT_COUNT" -lt 10 ] 2>/dev/null; then
             HEALTH_ICON="⚠️"
-            HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete (homepage fallback or bot challenge)."
-            echo "::warning::Only $PRODUCT_COUNT product(s) scraped for $SUPERMARKET — may be incomplete."
+            HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete (homepage fallback, bot challenge, or max-pages cap). Check scraper logs for '--max-pages cap applied' and 'Pagination discovery' lines."
+            echo "::warning::Only $PRODUCT_COUNT product(s) scraped for $SUPERMARKET — may be incomplete. Search logs for '--max-pages cap applied' or '[Scraper] Pagination discovery complete' to diagnose."
           else
             HEALTH_ICON="✅"
             HEALTH_STATUS="Healthy — $PRODUCT_COUNT products and $SNAPSHOT_COUNT price snapshots scraped."
             echo "✅ Scrape results verified: $PRODUCT_COUNT products, $SNAPSHOT_COUNT snapshots"
           fi
-          
+
           # Write per-job step summary
           {
             echo "## $HEALTH_ICON $SUPERMARKET Scrape Health"
@@ -308,14 +310,16 @@ jobs:
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| Supermarket | $SUPERMARKET |"
-            echo "| Provider | $PROVIDER |"
+            echo "| Provider | $PROVIDER (+ oxylabs auto-fallback) |"
             echo "| Store | ${{ steps.store_name.outputs.store_name }} |"
             echo "| URL | ${{ steps.category_url.outputs.url }} |"
             echo "| Category mode | ${{ github.event.inputs.category_names }} |"
-            echo "| Max pages | ${{ steps.max_pages.outputs.max_pages }} |"
+            echo "| Max pages (total cap) | $MAX_PAGES |"
             echo "| **Products scraped** | **$PRODUCT_COUNT** |"
             echo "| **Price snapshots** | **$SNAPSHOT_COUNT** |"
             echo "| Status | $HEALTH_STATUS |"
+            echo ""
+            echo "> **Tip:** Search the 'Run scraper' step log for \`[Scraper] Pagination discovery complete\` to see per-provider success/failure counts and total page URLs queued."
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$SCRAPE_FAILED" = "true" ]; then
