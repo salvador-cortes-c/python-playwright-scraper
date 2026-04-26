@@ -664,8 +664,8 @@ def _maybe_warn_neon_endpoint(database_url: str) -> None:
     if not _is_neon_reader_endpoint(database_url):
         return
 
-    print("WARNING: The configured Neon endpoint looks like a read-only/replica endpoint.")
-    print("  Neon read replicas can lag behind recent writes. Use the writer endpoint for scraper persistence.")
+    print("WARNING: The configured Neon endpoint looks like a read-only/replica endpoint.", flush=True)
+    print("  Neon read replicas can lag behind recent writes. Use the writer endpoint for scraper persistence.", flush=True)
 
 
 def persist_to_database(
@@ -680,12 +680,12 @@ def persist_to_database(
 ) -> None:
     database_url = resolve_database_url(args.database_url)
     if not database_url:
-        print("⚠️  WARNING: Database persistence skipped --database-url or DATABASE_URL environment variable not set.")
-        print("   Results saved to JSON files only. To enable database persistence, set DATABASE_URL environment variable.")
+        print("⚠️  WARNING: Database persistence skipped --database-url or DATABASE_URL environment variable not set.", flush=True)
+        print("   Results saved to JSON files only. To enable database persistence, set DATABASE_URL environment variable.", flush=True)
         return
 
     target_summary = _redact_database_url(database_url)
-    print(f"Persisting to DB at: {target_summary}")
+    print(f"Persisting to DB at: {target_summary}", flush=True)
     _maybe_warn_neon_endpoint(database_url)
 
     stats = persist_scrape_results(
@@ -704,7 +704,8 @@ def persist_to_database(
         f"stores={stats.stores_upserted}, "
         f"categories={stats.categories_upserted}, "
         f"snapshots={stats.snapshots_inserted}, "
-        f"product_category_links={stats.product_category_links_upserted}"
+        f"product_category_links={stats.product_category_links_upserted}",
+        flush=True,
     )
 
 
@@ -2568,7 +2569,7 @@ async def run_playwright_mode(args: argparse.Namespace) -> None:
         all_snapshots = load_price_snapshots(price_output_path)
 
     if args.initial_delay_seconds > 0:
-        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...")
+        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...", flush=True)
         await asyncio.sleep(args.initial_delay_seconds)
 
     storage_state_path = Path(args.storage_state)
@@ -3215,7 +3216,7 @@ async def scrape_url(
         _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "unreachable", "eof")
         if any(t in err_body for t in _TRANSIENT_SIGNALS):
             raise TransientError(f"Transient network error for {url}: {error}")
-        print(f"WARNING: request failed for {url}: {error}")
+        print(f"WARNING: request failed for {url}: {error}", flush=True)
         return [], []
 
     if not html:
@@ -3615,7 +3616,7 @@ async def main() -> None:
 
     provider_name: str = args.provider
     run_started_at = datetime.now(timezone.utc)
-    print(f"Using retailer profile: {args.site_profile}")
+    print(f"Using retailer profile: {args.site_profile}", flush=True)
     if provider_name == "playwright":
         await run_playwright_mode(args)
         return
@@ -3650,7 +3651,7 @@ async def main() -> None:
         print(f"Error: {exc}")
         raise SystemExit(1)
 
-    print(f"Using scraping provider: {provider_name}")
+    print(f"Using scraping provider: {provider_name}", flush=True)
     
     # Build fallback provider (oxylabs) if primary is direct
     fallback_provider = None
@@ -3672,11 +3673,11 @@ async def main() -> None:
                     country_code=args.country_code,
                     premium_proxy=args.premium_proxy,
                 )
-                print("Fallback provider (oxylabs) available for automatic fallback")
+                print("Fallback provider (oxylabs) available for automatic fallback", flush=True)
             else:
-                print("Warning: OXYLABS_API_KEY or OXYLABS_USERNAME/PASSWORD not set, fallback to oxylabs will not be available")
+                print("Warning: OXYLABS_API_KEY or OXYLABS_USERNAME/PASSWORD not set, fallback to oxylabs will not be available", flush=True)
         except Exception as e:
-            print(f"Warning: Could not create fallback provider: {e}")
+            print(f"Warning: Could not create fallback provider: {e}", flush=True)
 
     browser_only_flags = any(
         [
@@ -3692,12 +3693,14 @@ async def main() -> None:
     if browser_only_flags:
         print(
             "WARNING: Store interaction and browser-only flags are only supported in --provider playwright "
-            "and will be ignored for API-based providers."
+            "and will be ignored for API-based providers.",
+            flush=True,
         )
     if args.store_name and provider_name != "playwright":
         print(
             "NOTE: --store-name is honored as a metadata override for API-based providers. "
-            "It does not select the store in the remote site; it only sets the persisted store name."
+            "It does not select the store in the remote site; it only sets the persisted store name.",
+            flush=True,
         )
 
     progress_path = Path(args.progress_file)
@@ -3715,7 +3718,7 @@ async def main() -> None:
         all_snapshots = load_price_snapshots(price_output_path)
 
     if args.initial_delay_seconds > 0:
-        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...")
+        print(f"Initial delay: waiting {args.initial_delay_seconds:.1f}s before starting...", flush=True)
         await asyncio.sleep(args.initial_delay_seconds)
 
     async with aiohttp.ClientSession() as session:
@@ -3794,10 +3797,10 @@ async def main() -> None:
                             category_name_selector=args.category_name_selector,
                         )
                     except RateLimitError as exc:
-                        print(f"WARNING: {exc}")
+                        print(f"WARNING: {exc}", flush=True)
                         return []
                     except Exception as exc:
-                        print(f"WARNING: category discovery failed for {input_url}: {exc}")
+                        print(f"WARNING: category discovery failed for {input_url}: {exc}", flush=True)
                         categories = []
 
                     discovered_categories_all.extend(categories)
@@ -3807,7 +3810,8 @@ async def main() -> None:
                     if not expanded_urls:
                         print(
                             "WARNING: No category URLs discovered; falling back to input URL. "
-                            "Check --category-link-selector and --category-name-selector."
+                            "Check --category-link-selector and --category-name-selector.",
+                            flush=True,
                         )
                         expanded_urls = [input_url]
 
@@ -3828,12 +3832,12 @@ async def main() -> None:
                             )
                             pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
                         except RateLimitError as exc:
-                            print(f"WARNING: {exc}")
+                            print(f"WARNING: {exc}", flush=True)
                             return []
                         except Exception as exc:
                             if fallback_provider is not None:
-                                print(f"⚠️  Primary provider failed during pagination discovery for {category_url}: {exc}")
-                                print(f"🔄 Trying fallback provider ({fallback_provider.name}) for pagination discovery...")
+                                print(f"⚠️  Primary provider failed during pagination discovery for {category_url}: {exc}", flush=True)
+                                print(f"🔄 Trying fallback provider ({fallback_provider.name}) for pagination discovery...", flush=True)
                                 try:
                                     html = await fetch_html_or_raise(
                                         session=session,
@@ -3841,12 +3845,12 @@ async def main() -> None:
                                         provider=fallback_provider,
                                     )
                                     pages = discover_category_page_urls_from_html(start_url=category_url, html=html)
-                                    print(f"✅ Fallback provider succeeded for pagination discovery of {category_url}")
+                                    print(f"✅ Fallback provider succeeded for pagination discovery of {category_url}", flush=True)
                                 except Exception as fallback_exc:
-                                    print(f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}")
+                                    print(f"⚠️  Fallback provider also failed for pagination discovery: {fallback_exc}", flush=True)
                                     pages = [category_url]
                             else:
-                                print(f"WARNING: pagination discovery failed for {category_url}: {exc}")
+                                print(f"WARNING: pagination discovery failed for {category_url}: {exc}", flush=True)
                                 pages = [category_url]
 
                         print(f"[Scraper]   → {len(pages)} page URL(s) for: {category_url}", flush=True)
@@ -3939,7 +3943,7 @@ async def main() -> None:
                         store_name=args.store_name or None,
                     )
                     if switched_to_fallback:
-                        print("✅ Fallback provider succeeded")
+                        print("✅ Fallback provider succeeded", flush=True)
                     print(
                         f"[Scraper] ✅ Page {page_idx}/{total_pages_to_scrape}: "
                         f"found {len(products)} products, {len(snapshots)} snapshots",
@@ -3949,8 +3953,8 @@ async def main() -> None:
                 except (RateLimitError, TransientError, RuntimeError) as exc:
                     # Rate limit / bot challenge on primary: switch to fallback immediately and permanently
                     if isinstance(exc, RateLimitError) and not switched_to_fallback and fallback_provider is not None:
-                        print(f"⚠️  Primary provider failed: {exc}")
-                        print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...")
+                        print(f"⚠️  Primary provider failed: {exc}", flush=True)
+                        print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...", flush=True)
                         switched_to_fallback = True
                         transient_attempt = 0
                         rl_attempt = 0
@@ -3959,12 +3963,13 @@ async def main() -> None:
                     # Transient error: retry current provider with exponential backoff,
                     # then fall back to oxylabs once primary retries are exhausted
                     if isinstance(exc, TransientError):
-                        print(f"WARNING: [{active_label}] {exc}")
+                        print(f"WARNING: [{active_label}] {exc}", flush=True)
                         if transient_attempt >= max(0, int(args.max_retries)):
                             if not switched_to_fallback and fallback_provider is not None:
                                 print(
                                     f"⚠️  Primary provider exhausted {transient_attempt} retries, "
-                                    f"permanently switching to fallback provider (oxylabs) for all remaining pages..."
+                                    f"permanently switching to fallback provider (oxylabs) for all remaining pages...",
+                                    flush=True,
                                 )
                                 switched_to_fallback = True
                                 transient_attempt = 0
@@ -3972,7 +3977,8 @@ async def main() -> None:
                                 continue
                             print(
                                 f"Giving up on {current_url} after {transient_attempt} "
-                                f"transient retries [{active_label}]"
+                                f"transient retries [{active_label}]",
+                                flush=True,
                             )
                             scrape_error_count += 1
                             break
@@ -3984,17 +3990,19 @@ async def main() -> None:
                         )
                         print(
                             f"Transient error [{active_label}]: waiting {wait_seconds:.1f}s then retrying "
-                            f"({transient_attempt}/{args.max_retries})..."
+                            f"({transient_attempt}/{args.max_retries})...",
+                            flush=True,
                         )
                         await asyncio.sleep(wait_seconds)
                     # Rate limit on fallback, or rate limit on primary with no fallback
                     elif isinstance(exc, RateLimitError):
-                        print(f"WARNING: [{active_label}] {exc}")
+                        print(f"WARNING: [{active_label}] {exc}", flush=True)
                         if rl_attempt >= max(0, int(args.max_rate_limit_retries)):
                             if switched_to_fallback:
                                 print(
                                     f"Giving up on {current_url}: fallback provider also rate limited "
-                                    f"after {rl_attempt} retries"
+                                    f"after {rl_attempt} retries",
+                                    flush=True,
                                 )
                                 scrape_error_count += 1
                             else:
@@ -4008,14 +4016,15 @@ async def main() -> None:
                         )
                         print(
                             f"Rate limit [{active_label}]: waiting {wait_seconds:.1f}s then retrying "
-                            f"({rl_attempt}/{args.max_rate_limit_retries})..."
+                            f"({rl_attempt}/{args.max_rate_limit_retries})...",
+                            flush=True,
                         )
                         await asyncio.sleep(wait_seconds)
                     # RuntimeError or other unexpected failure
                     else:
-                        print(f"ERROR: [{active_label}] {exc}")
+                        print(f"ERROR: [{active_label}] {exc}", flush=True)
                         if not switched_to_fallback and fallback_provider is not None:
-                            print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...")
+                            print("🔄 Permanently switching to fallback provider (oxylabs) for all remaining pages...", flush=True)
                             switched_to_fallback = True
                             transient_attempt = 0
                             rl_attempt = 0
@@ -4080,8 +4089,8 @@ async def main() -> None:
     else:
         write_price_snapshots(price_output_path, all_snapshots)
 
-    print(f"Saved {len(all_products)} products to {output_path}")
-    print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}")
+    print(f"Saved {len(all_products)} products to {output_path}", flush=True)
+    print(f"Saved {len(all_snapshots)} price snapshots to {price_output_path}", flush=True)
 
     persist_to_database(
         args,
@@ -4094,7 +4103,7 @@ async def main() -> None:
     )
 
     if rate_limit_hit:
-        print("Run stopped early due to rate limiting; partial results were saved.")
+        print("Run stopped early due to rate limiting; partial results were saved.", flush=True)
 
     unique_category_count = len({c.url for c in discovered_categories_all})
     print("", flush=True)
@@ -4112,7 +4121,7 @@ async def main() -> None:
     # Post-scrape semantic deduplication (always runs when scraping completes)
     if DeduplicationIntegration:
         try:
-            print("\n[Dedup] Starting post-scrape semantic deduplication...")
+            print("\n[Dedup] Starting post-scrape semantic deduplication...", flush=True)
             dedup = DeduplicationIntegration(
                 auto_consolidate_threshold=args.dedup_auto_threshold,
                 review_threshold=args.dedup_review_threshold,
@@ -4125,17 +4134,18 @@ async def main() -> None:
             )
             print(f"[Dedup] Results: {results['total_groups']} found, "
                   f"{results['auto_consolidated']} auto-consolidated, "
-                  f"{results['pending_review']} pending review")
+                  f"{results['pending_review']} pending review",
+                  flush=True)
             if results['exported_files']:
-                print("[Dedup] Exported files:")
+                print("[Dedup] Exported files:", flush=True)
                 for file in results['exported_files']:
-                    print(f"       - {file}")
+                    print(f"       - {file}", flush=True)
             if results['errors']:
-                print("[Dedup] ⚠️  Errors occurred:")
+                print("[Dedup] ⚠️  Errors occurred:", flush=True)
                 for error in results['errors']:
-                    print(f"       - {error}")
+                    print(f"       - {error}", flush=True)
         except Exception as e:
-            print(f"[Dedup] ⚠️  Deduplication skipped: {e}")
+            print(f"[Dedup] ⚠️  Deduplication skipped: {e}", flush=True)
 
 
 if __name__ == "__main__":
