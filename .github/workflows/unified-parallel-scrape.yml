@@ -47,6 +47,10 @@ jobs:
             [paknsave]="https://www.paknsave.co.nz/shop/category/beer-wine-and-cider?pg=1"
             [woolworths]="https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48"
           )
+          # Woolworths and PAKn'SAVE block the direct HTTP provider (React SPA / Cloudflare).
+          # Use the Playwright (headless-browser) provider for these sites so that
+          # category discovery and product scraping work reliably.
+          declare -A PROVIDER=( [newworld]="direct" [paknsave]="playwright" [woolworths]="playwright" )
 
           INCLUDES="[]"
           IFS=',' read -ra SM_LIST <<< "$SUPERMARKETS"
@@ -61,7 +65,8 @@ jobs:
               --arg site_profile "${SITE_PROFILE[$SM]}" \
               --arg default_store "${DEFAULT_STORE[$SM]}" \
               --arg default_url "${DEFAULT_URL[$SM]}" \
-              '{supermarket: $supermarket, site_profile: $site_profile, default_store: $default_store, default_url: $default_url}')
+              --arg provider "${PROVIDER[$SM]}" \
+              '{supermarket: $supermarket, site_profile: $site_profile, default_store: $default_store, default_url: $default_url, provider: $provider}')
             INCLUDES=$(echo "$INCLUDES" | jq -c --argjson entry "$ENTRY" '. + [$entry]')
           done
 
@@ -227,6 +232,7 @@ jobs:
           echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
           echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
           echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
+          echo "⚙️  Provider: ${{ matrix.provider }}"
           
           # Build optional flags
           EXTRA_FLAGS=()
@@ -235,12 +241,15 @@ jobs:
             echo "🗂️  Discovering all categories for ${{ matrix.supermarket }}"
           fi
           
-          # Run scraper with automatic provider fallback (direct → oxylabs)
-          # The scraper will handle provider fallback internally
+          # Run scraper using the per-supermarket provider.
+          # Woolworths and PAKn'SAVE use --provider playwright (headless browser) because:
+          #   - Woolworths is a React SPA that needs JS rendering for category discovery
+          #   - PAKn'SAVE has Cloudflare protection that blocks plain HTTP requests
+          # New World uses --provider direct with automatic oxylabs fallback.
           python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
             --site-profile ${{ matrix.site_profile }} \
-            --provider direct \
+            --provider ${{ matrix.provider }} \
             --store-name "${{ steps.store_name.outputs.store_name }}" \
             --max-pages ${{ steps.max_pages.outputs.max_pages }} \
             --limit 100 \
@@ -251,13 +260,15 @@ jobs:
             --delay-jitter-seconds 0.5 \
             "${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}"
 
-      - name: Verify scrape results
+      - name: Verify scrape results and write health report
         if: always()
         run: |
           PRODUCTS_FILE="products_${{ matrix.supermarket }}_${{ github.run_id }}.json"
           SNAPSHOTS_FILE="price_snapshots_${{ matrix.supermarket }}_${{ github.run_id }}.json"
+          SUPERMARKET="${{ matrix.supermarket }}"
+          PROVIDER="${{ matrix.provider }}"
           
-          echo "📊 Verifying scrape results for ${{ matrix.supermarket }}..."
+          echo "📊 Verifying scrape results for $SUPERMARKET (provider: $PROVIDER)..."
           
           if [ -f "$PRODUCTS_FILE" ]; then
             PRODUCT_COUNT=$(python -c "import json,sys; data=json.load(open('$PRODUCTS_FILE')); print(len(data) if isinstance(data,list) else 0)" 2>/dev/null || echo "0")
@@ -276,10 +287,35 @@ jobs:
           fi
           
           if [ "$PRODUCT_COUNT" = "0" ] && [ "$SNAPSHOT_COUNT" = "0" ]; then
-            echo "::warning::No products or price snapshots were scraped for ${{ matrix.supermarket }}. Check provider logs above for bot-challenge or fallback errors."
+            HEALTH_ICON="❌"
+            HEALTH_STATUS="No data scraped — check provider logs for bot-challenge or timeout errors."
+            echo "::warning::No products or price snapshots were scraped for $SUPERMARKET. Check provider logs above."
+          elif [ "$PRODUCT_COUNT" -lt 10 ] 2>/dev/null; then
+            HEALTH_ICON="⚠️"
+            HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete (homepage fallback or bot challenge)."
+            echo "::warning::Only $PRODUCT_COUNT product(s) scraped for $SUPERMARKET — may be incomplete."
           else
+            HEALTH_ICON="✅"
+            HEALTH_STATUS="Healthy — $PRODUCT_COUNT products and $SNAPSHOT_COUNT price snapshots scraped."
             echo "✅ Scrape results verified: $PRODUCT_COUNT products, $SNAPSHOT_COUNT snapshots"
           fi
+          
+          # Write per-job step summary
+          {
+            echo "## $HEALTH_ICON $SUPERMARKET Scrape Health"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Supermarket | $SUPERMARKET |"
+            echo "| Provider | $PROVIDER |"
+            echo "| Store | ${{ steps.store_name.outputs.store_name }} |"
+            echo "| URL | ${{ steps.category_url.outputs.url }} |"
+            echo "| Category mode | ${{ github.event.inputs.category_names }} |"
+            echo "| Max pages | ${{ steps.max_pages.outputs.max_pages }} |"
+            echo "| **Products scraped** | **$PRODUCT_COUNT** |"
+            echo "| **Price snapshots** | **$SNAPSHOT_COUNT** |"
+            echo "| Status | $HEALTH_STATUS |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifacts
         if: always()
@@ -306,7 +342,37 @@ jobs:
           echo "   Categories: ${{ github.event.inputs.category_names }}"
           echo "   Pages: ${{ github.event.inputs.number_of_pages }}"
           echo ""
-          echo "💾 All data persisted to PostgreSQL database"
-          echo "🔄 Provider fallback: direct → oxylabs (automatic)"
+          echo "⚙️  Providers used:"
+          echo "   newworld  → direct  (with automatic oxylabs fallback)"
+          echo "   paknsave  → playwright (headless browser; bypasses Cloudflare)"
+          echo "   woolworths→ playwright (headless browser; renders React SPA for category discovery)"
           echo ""
-          echo "📦 Artifacts uploaded for each supermarket-category combination"
+          echo "💾 Data persisted to PostgreSQL database"
+          echo "📦 Per-supermarket artifacts uploaded (retention: 7 days)"
+          echo ""
+          echo "ℹ️  Check each job's step summary for per-supermarket health details."
+
+      - name: Write overall summary
+        run: |
+          {
+            echo "# 🛒 Unified Scrape Run Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Run ID | ${{ github.run_id }} |"
+            echo "| Supermarkets | ${{ github.event.inputs.supermarkets }} |"
+            echo "| Categories | ${{ github.event.inputs.category_names }} |"
+            echo "| Pages | ${{ github.event.inputs.number_of_pages }} |"
+            echo ""
+            echo "## Provider strategy"
+            echo ""
+            echo "| Supermarket | Provider | Reason |"
+            echo "|-------------|----------|--------|"
+            echo "| newworld | \`direct\` (+ oxylabs fallback) | Standard HTTP works; Oxylabs auto-fallback on bot challenge |"
+            echo "| paknsave | \`playwright\` | Cloudflare protection blocks plain HTTP; headless browser bypasses it |"
+            echo "| woolworths | \`playwright\` | React SPA — category links require JavaScript rendering |"
+            echo ""
+            echo "## Per-supermarket results"
+            echo ""
+            echo "_See each scrape job's step summary for detailed health tables._"
+          } >> "$GITHUB_STEP_SUMMARY"
