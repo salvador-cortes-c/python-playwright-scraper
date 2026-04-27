@@ -533,10 +533,15 @@ class WoolworthsApiProvider:
 
     _BASE_URL = "https://www.woolworths.co.nz"
     _API_PATH = "/api/v1/products"
+    # x-ui-ver is the Woolworths web-app version string sent by the official browser
+    # client.  It is included in every API request.  If requests start returning 400
+    # errors, check the current value in the browser's network tab.
+    _UI_VER = "7.70.51"
+    _DEFAULT_TIMEOUT = 30  # seconds
     _STATIC_HEADERS: dict[str, str] = {
         "accept": "application/json, text/plain, */*",
         "x-requested-with": "OnlineShopping.WebApp",
-        "x-ui-ver": "7.70.51",
+        "x-ui-ver": _UI_VER,
         "user-agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -671,7 +676,7 @@ class WoolworthsApiProvider:
                 params=params,
                 cookies=cookies,
                 headers=headers,
-                timeout=30,
+                timeout=self._DEFAULT_TIMEOUT,
             ) as response:
                 status = response.status
                 text = await response.text()
@@ -689,7 +694,7 @@ class WoolworthsApiProvider:
                 except Exception:
                     return None, {"error": "Invalid JSON response", "response": text[:300]}, status
         except asyncio.TimeoutError:
-            return None, {"error": "Timeout after 30 seconds"}, None
+            return None, {"error": f"Timeout after {self._DEFAULT_TIMEOUT} seconds"}, None
         except Exception as exc:
             return None, {"error": str(exc)}, None
 

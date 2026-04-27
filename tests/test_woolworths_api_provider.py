@@ -165,7 +165,7 @@ class BuildProviderWoolworthsApiTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class CookieLoadingTests(unittest.TestCase):
-    def test_load_cookies_reads_playwright_storage_state(self, tmp_path=None):
+    def test_load_cookies_reads_playwright_storage_state(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             state_file = Path(tmp) / "state.json"
