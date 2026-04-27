@@ -19,6 +19,10 @@ on:
         description: 'Job timeout in minutes (default: 120)'
         required: false
         default: '120'
+      debug_enabled:
+        description: 'Enable debug logging (shows API requests/responses)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
@@ -139,12 +143,16 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: '1'
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+          WOOLWORTHS_API_DEBUG: ${{ github.event.inputs.debug_enabled == 'true' && '1' || '0' }}
         run: |
           echo "🚀 Starting woolworths scrape (woolworths-api) - ${{ github.event.inputs.category_names }}"
           echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
           echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
           echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
           echo "⚙️  Provider: woolworths-api"
+          if [ "$WOOLWORTHS_API_DEBUG" = "1" ]; then
+            echo "🐛 Debug mode: ENABLED"
+          fi
 
           python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
