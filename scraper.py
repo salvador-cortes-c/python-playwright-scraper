@@ -537,7 +537,7 @@ class WoolworthsApiProvider:
     # client.  It is included in every API request.  If requests start returning 400
     # errors, check the current value in the browser's network tab.
     _UI_VER = "7.70.51"
-    _DEFAULT_TIMEOUT = 30  # seconds
+    _DEFAULT_TIMEOUT = 15  # seconds – fail fast rather than waiting the full 30 s
 
     # Each profile is (user-agent, sec-ch-ua, sec-ch-ua-platform).
     # Values are taken from real Chrome/Edge desktop browser sessions on the
@@ -597,6 +597,13 @@ class WoolworthsApiProvider:
     def name(self) -> str:
         return "woolworths-api"
 
+    # ── Debug helpers ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _debug_enabled() -> bool:
+        """Return True when the ``WOOLWORTHS_API_DEBUG`` env variable is set."""
+        return os.environ.get("WOOLWORTHS_API_DEBUG", "").lower() in ("1", "true", "yes")
+
     # ── Cookie helpers ─────────────────────────────────────────────────────────
 
     def _load_cookies(self) -> dict[str, str]:
@@ -636,6 +643,22 @@ class WoolworthsApiProvider:
                 "No Woolworths cookies found in storage state. "
                 "Re-run with --provider playwright to refresh the session."
             )
+
+        if self._debug_enabled():
+            print(
+                f"[woolworths-api] Loaded {len(cookies)} cookie(s) from {self.cookies_file}; "
+                f"XSRF-TOKEN={'present' if cookies.get('XSRF-TOKEN') else 'missing'}",
+                flush=True,
+            )
+
+        if not cookies.get("XSRF-TOKEN"):
+            print(
+                "WARNING: [woolworths-api] XSRF-TOKEN cookie is missing or empty. "
+                "API requests are likely to be rejected (HTTP 401/403). "
+                "Re-run with --provider playwright to refresh cookies.",
+                flush=True,
+            )
+
         return cookies
 
     def _request_headers(self, xsrf_token: str | None) -> dict[str, str]:
@@ -721,6 +744,16 @@ class WoolworthsApiProvider:
         params = self._build_params(url)
         api_url = f"{self._BASE_URL}{self._API_PATH}"
 
+        if self._debug_enabled():
+            ua = headers.get("user-agent", "")
+            print(
+                f"[woolworths-api] → GET {api_url}\n"
+                f"[woolworths-api]   params : {params}\n"
+                f"[woolworths-api]   headers: x-xsrf-token={'present' if xsrf_token else 'MISSING'}, "
+                f"user-agent={ua[:50]}{'…' if len(ua) > 50 else ''}",
+                flush=True,
+            )
+
         try:
             async with session.get(
                 api_url,
@@ -731,6 +764,15 @@ class WoolworthsApiProvider:
             ) as response:
                 status = response.status
                 text = await response.text()
+
+                if self._debug_enabled():
+                    preview = text[:300].replace("\n", " ")
+                    print(
+                        f"[woolworths-api] ← HTTP {status} ({len(text)} bytes)\n"
+                        f"[woolworths-api]   preview: {preview}",
+                        flush=True,
+                    )
+
                 if status in (401, 403):
                     return None, {
                         "error": (
@@ -738,10 +780,22 @@ class WoolworthsApiProvider:
                             "Re-run with --provider playwright to refresh cookies."
                         )
                     }, status
+                if status == 400:
+                    return None, {
+                        "error": f"Woolworths API rejected the request (HTTP 400 Bad Request). "
+                                 f"Response: {text[:300]}"
+                    }, status
                 if status != 200:
                     return None, {"error": f"HTTP {status}", "response": text[:300]}, status
                 try:
-                    return None, json.loads(text), status
+                    payload = json.loads(text)
+                    if self._debug_enabled():
+                        top_keys = list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__
+                        print(
+                            f"[woolworths-api]   JSON top-level keys: {top_keys}",
+                            flush=True,
+                        )
+                    return None, payload, status
                 except Exception:
                     return None, {"error": "Invalid JSON response", "response": text[:300]}, status
         except asyncio.TimeoutError:
@@ -785,6 +839,22 @@ class WoolworthsApiProvider:
             if isinstance(products_block, dict)
             else []
         )
+
+        if self._debug_enabled():
+            print(
+                f"[woolworths-api] products.items contains {len(items)} item(s) "
+                f"(url={url})",
+                flush=True,
+            )
+
+        if not items:
+            print(
+                f"WARNING: [woolworths-api] API returned zero items for {url}. "
+                "Possible causes: session cookies expired, invalid category slug, "
+                "or the API response structure has changed. "
+                "Set WOOLWORTHS_API_DEBUG=1 for full response details.",
+                flush=True,
+            )
 
         query_normalized = query.strip().lower() if query else ""
         resolved_supermarket = supermarket_name or "Woolworths"
