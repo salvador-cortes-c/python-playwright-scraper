@@ -50,14 +50,15 @@ _PROVIDER_ENDPOINTS: dict[str, str] = {
     "oxylabs":     "https://realtime.oxylabs.io/v1/queries",
 }
 _PROVIDER_KEY_ENVVARS: dict[str, str] = {
-    "playwright":  "",
-    "scrapingbee": "SCRAPING_PROVIDER_API_KEY",
-    "scraperapi":  "SCRAPERAPI_KEY",
-    "crawlbase":   "CRAWLBASE_TOKEN",
-    "zenrows":     "ZENROWS_API_KEY",
-    "floppydata":  "FLOPPYDATA_API_KEY",
-    "oxylabs":     "OXYLABS_API_KEY",
-    "direct":      "",
+    "playwright":      "",
+    "scrapingbee":     "SCRAPING_PROVIDER_API_KEY",
+    "scraperapi":      "SCRAPERAPI_KEY",
+    "crawlbase":       "CRAWLBASE_TOKEN",
+    "zenrows":         "ZENROWS_API_KEY",
+    "floppydata":      "FLOPPYDATA_API_KEY",
+    "oxylabs":         "OXYLABS_API_KEY",
+    "direct":          "",
+    "woolworths-api":  "",
 }
 
 
@@ -498,7 +499,315 @@ class DirectProvider:
             return None, {"error": str(exc)}, None
 
 
-AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | OxylabsProvider | DirectProvider
+class WoolworthsApiProvider:
+    """Direct Woolworths NZ JSON API provider.
+
+    Bypasses HTML scraping entirely by calling the internal ``/api/v1/products``
+    endpoint with session cookies obtained from a Playwright ``storage_state.json``
+    file.  No third-party proxy API key is required.
+
+    Usage::
+
+        # 1. Create a session first (one-off, reusable for weeks):
+        python scraper.py --provider playwright --url https://www.woolworths.co.nz/shop/browse/bakery
+
+        # 2. Scrape via the JSON API (fast, no JS rendering needed):
+        python scraper.py --provider woolworths-api --url https://www.woolworths.co.nz/shop/browse/bakery
+
+    The ``storage_state.json`` file created by the playwright run is read by
+    default.  Override with ``--storage-state /path/to/state.json`` or pass
+    the file path directly via ``--api-key /path/to/state.json``.
+
+    Supported URL patterns
+    ----------------------
+    * ``/shop/browse/<slug>?page=N&size=48``   → ``target=browse&category=<slug>``
+    * ``/shop/category/<slug>?page=N&size=48`` → ``target=browse&category=<slug>``
+    * ``/shop/searchproducts?search=<term>``   → ``target=search&search=<term>``
+
+    Limitations
+    -----------
+    * ``--discover-category-urls`` and ``--crawl-category-pages`` are not
+      supported for this provider; pass category URLs directly as ``--url``.
+    * Product images are not returned by the search/browse API endpoints.
+    """
+
+    _BASE_URL = "https://www.woolworths.co.nz"
+    _API_PATH = "/api/v1/products"
+    _STATIC_HEADERS: dict[str, str] = {
+        "accept": "application/json, text/plain, */*",
+        "x-requested-with": "OnlineShopping.WebApp",
+        "x-ui-ver": "7.70.51",
+        "user-agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+    def __init__(self, cookies_file: str = "storage_state.json") -> None:
+        self.cookies_file = Path(cookies_file)
+
+    @property
+    def name(self) -> str:
+        return "woolworths-api"
+
+    # ── Cookie helpers ─────────────────────────────────────────────────────────
+
+    def _load_cookies(self) -> dict[str, str]:
+        """Load Woolworths cookies from a Playwright storage_state.json file.
+
+        Accepts two formats:
+        * Playwright storage state: ``{"cookies": [...], "origins": [...]}``
+        * Plain cookie list (woolies-nz-cli format): ``[{...}, ...]``
+        """
+        if not self.cookies_file.exists():
+            raise RuntimeError(
+                f"Cookies file not found: {self.cookies_file}. "
+                "Run --provider playwright first to create a session, then re-run "
+                "with --provider woolworths-api."
+            )
+        try:
+            data = json.loads(self.cookies_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cannot parse cookies file {self.cookies_file}: {exc}"
+            ) from exc
+
+        raw: list[Any] = data.get("cookies", []) if isinstance(data, dict) else data
+        cookies: dict[str, str] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            if "woolworths.co.nz" not in str(item.get("domain", "")):
+                continue
+            name = str(item.get("name", ""))
+            value = str(item.get("value", ""))
+            if name and value:
+                cookies[name] = value
+
+        if not cookies:
+            raise RuntimeError(
+                "No Woolworths cookies found in storage state. "
+                "Re-run with --provider playwright to refresh the session."
+            )
+        return cookies
+
+    def _request_headers(self, xsrf_token: str | None) -> dict[str, str]:
+        headers = dict(self._STATIC_HEADERS)
+        headers["referer"] = f"{self._BASE_URL}/"
+        headers["origin"] = self._BASE_URL
+        if xsrf_token:
+            headers["x-xsrf-token"] = xsrf_token
+        return headers
+
+    # ── URL → API params conversion ────────────────────────────────────────────
+
+    def _build_params(self, url: str) -> dict[str, str]:
+        """Map a Woolworths product-listing URL to ``/api/v1/products`` query params."""
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        path = parsed.path.rstrip("/")
+
+        page = qs.get("page", ["1"])[0]
+        size = qs.get("size", ["48"])[0]
+
+        # Explicit keyword search: /shop/searchproducts?search=<term>
+        search_term = qs.get("search", [""])[0]
+        if search_term:
+            return {
+                "target": "search",
+                "search": search_term,
+                "inStockProductsOnly": "false",
+                "size": size,
+                "page": page,
+            }
+
+        # Browse / category URL: /shop/browse/<slug> or /shop/category/<slug>
+        for prefix in ("/shop/browse/", "/shop/category/"):
+            if path.startswith(prefix):
+                slug = path[len(prefix):].split("/")[0]
+                if slug:
+                    return {
+                        "target": "browse",
+                        "category": slug,
+                        "inStockProductsOnly": "false",
+                        "size": size,
+                        "page": page,
+                    }
+
+        # Fallback: open search (returns featured / homepage products)
+        return {
+            "target": "search",
+            "search": "",
+            "inStockProductsOnly": "false",
+            "size": size,
+            "page": page,
+        }
+
+    # ── Fetch ──────────────────────────────────────────────────────────────────
+
+    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+        """Low-level fetch — returns ``(None, json_payload_or_error, status)``.
+
+        Prefer :meth:`fetch_products` for typed output.  This method is exposed
+        so the provider satisfies the ``AnyProvider`` structural interface and can
+        be passed to helpers like :func:`fetch_html_or_raise`; those helpers will
+        receive an error dict and raise a ``RuntimeError``, which is the correct
+        behaviour when attempting HTML-oriented operations (category discovery,
+        pagination discovery) with this provider.
+        """
+        try:
+            cookies = self._load_cookies()
+        except RuntimeError as exc:
+            return None, {"error": str(exc)}, None
+
+        xsrf_token = cookies.get("XSRF-TOKEN")
+        headers = self._request_headers(xsrf_token)
+        params = self._build_params(url)
+        api_url = f"{self._BASE_URL}{self._API_PATH}"
+
+        try:
+            async with session.get(
+                api_url,
+                params=params,
+                cookies=cookies,
+                headers=headers,
+                timeout=30,
+            ) as response:
+                status = response.status
+                text = await response.text()
+                if status in (401, 403):
+                    return None, {
+                        "error": (
+                            f"Woolworths API authentication failed (HTTP {status}). "
+                            "Re-run with --provider playwright to refresh cookies."
+                        )
+                    }, status
+                if status != 200:
+                    return None, {"error": f"HTTP {status}", "response": text[:300]}, status
+                try:
+                    return None, json.loads(text), status
+                except Exception:
+                    return None, {"error": "Invalid JSON response", "response": text[:300]}, status
+        except asyncio.TimeoutError:
+            return None, {"error": "Timeout after 30 seconds"}, None
+        except Exception as exc:
+            return None, {"error": str(exc)}, None
+
+    async def fetch_products(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        query: str | None,
+        limit: int,
+        supermarket_name: str | None,
+        store_name: str | None,
+    ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
+        """Fetch and parse products from the Woolworths JSON API.
+
+        Calls ``/api/v1/products``, maps the response items to
+        :class:`Product` / :class:`ProductPriceSnapshot` dataclasses, and
+        applies the same name-filter and limit logic as the HTML scraper.
+        """
+        _, payload, status = await self.fetch(session, url)
+
+        if not isinstance(payload, dict):
+            return [], []
+
+        if "error" in payload:
+            err = str(payload["error"])
+            if status in (401, 403):
+                raise RuntimeError(err)
+            _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "eof")
+            if any(t in err.lower() for t in _TRANSIENT_SIGNALS):
+                raise TransientError(f"Transient error for {url}: {err}")
+            print(f"WARNING: [woolworths-api] {err}", flush=True)
+            return [], []
+
+        products_block = payload.get("products")
+        items: list[Any] = (
+            products_block.get("items", [])
+            if isinstance(products_block, dict)
+            else []
+        )
+
+        query_normalized = query.strip().lower() if query else ""
+        resolved_supermarket = supermarket_name or "Woolworths"
+        resolved_store = store_name or resolved_supermarket
+        scraped_at = datetime.now(timezone.utc).isoformat()
+
+        products: list[Product] = []
+        snapshots: list[ProductPriceSnapshot] = []
+
+        for item in items:
+            if not isinstance(item, dict) or item.get("type") != "Product":
+                continue
+            if len(products) >= limit:
+                break
+
+            name = _clean_text(str(item.get("name") or ""))
+            if not name or _looks_like_price_only_name(name):
+                continue
+            if query_normalized and query_normalized not in name.lower():
+                continue
+
+            price_info: dict[str, Any] = item.get("price") or {}
+            size_info: dict[str, Any] = item.get("size") or {}
+
+            original_price = price_info.get("originalPrice")
+            sale_price = price_info.get("salePrice")
+
+            price_str = f"{original_price:.2f}" if isinstance(original_price, (int, float)) else ""
+            promo_price_str = ""
+            if (
+                isinstance(sale_price, (int, float))
+                and isinstance(original_price, (int, float))
+                and sale_price < original_price
+            ):
+                promo_price_str = f"{sale_price:.2f}"
+
+            cup_price = size_info.get("cupPrice")
+            cup_measure = _clean_text(str(size_info.get("cupMeasure") or ""))
+            unit_price_str = (
+                f"${cup_price:.2f}/{cup_measure}"
+                if isinstance(cup_price, (int, float)) and cup_measure
+                else ""
+            )
+
+            volume_size = _clean_text(str(size_info.get("volumeSize") or ""))
+            packaging_format = (
+                _extract_packaging_from_name(name)
+                or _extract_packaging_from_name(volume_size)
+                or _extract_packaging_format(unit_price_str)
+            )
+            normalized_name = _normalize_product_name(name)
+            product_key = _product_key(normalized_name, packaging_format)
+
+            products.append(
+                Product(
+                    product_key=product_key,
+                    name=name,
+                    packaging_format=packaging_format,
+                    image="",
+                )
+            )
+            snapshots.append(
+                ProductPriceSnapshot(
+                    product_key=product_key,
+                    supermarket_name=resolved_supermarket,
+                    price=price_str,
+                    unit_price=unit_price_str,
+                    source_url=url,
+                    scraped_at=scraped_at,
+                    promo_price=promo_price_str,
+                    promo_unit_price="",
+                    store_name=resolved_store,
+                )
+            )
+
+        return products, snapshots
+
+
+AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | OxylabsProvider | DirectProvider | WoolworthsApiProvider
 
 
 def build_provider(
@@ -510,6 +819,8 @@ def build_provider(
 ) -> AnyProvider:
     if provider_name == "direct":
         return DirectProvider()
+    if provider_name == "woolworths-api":
+        return WoolworthsApiProvider(cookies_file=api_key or "storage_state.json")
     if not api_key:
         if provider_name == "oxylabs":
             raise ValueError(
@@ -532,7 +843,7 @@ def build_provider(
     if cls is None:
         raise ValueError(
             f"Unknown provider '{provider_name}'. "
-            f"Choose from: {', '.join(list(cls_map) + ['direct'])}"
+            f"Choose from: {', '.join(list(cls_map) + ['direct', 'woolworths-api'])}"
         )
     return cls(
         api_key=api_key,
@@ -3312,6 +3623,16 @@ async def scrape_url(
     supermarket_name: str | None = None,
     store_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
+    if isinstance(provider, WoolworthsApiProvider):
+        return await provider.fetch_products(
+            session=session,
+            url=url,
+            query=args.query,
+            limit=max(1, int(args.limit)),
+            supermarket_name=supermarket_name,
+            store_name=store_name,
+        )
+
     html, error, status = await provider.fetch(session, url)
 
     if error:
@@ -3697,7 +4018,7 @@ async def main() -> None:
     parser.add_argument(
         "--provider",
         default="oxylabs",
-        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "floppydata", "oxylabs", "direct", "playwright"],
+        choices=["scrapingbee", "scraperapi", "crawlbase", "zenrows", "floppydata", "oxylabs", "direct", "playwright", "woolworths-api"],
         help="Scraping provider/engine to use (default: oxylabs).",
     )
     parser.add_argument(
@@ -3783,6 +4104,9 @@ async def main() -> None:
                 oxylabs_password = os.getenv("OXYLABS_PASSWORD")
                 if oxylabs_username and oxylabs_password:
                     api_key = f"{oxylabs_username}:{oxylabs_password}"
+        elif provider_name == "woolworths-api":
+            # Use --storage-state as the cookies file; fall back to default
+            api_key = getattr(args, "storage_state", None) or "storage_state.json"
         else:
             api_key = os.getenv(env_var) if env_var else None
     
