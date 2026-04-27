@@ -870,12 +870,12 @@ class FetchTimeoutOverrideTests(unittest.IsolatedAsyncioTestCase):
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
             with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "1"}):
-                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
                     await provider.fetch(
                         session=session,
                         url="https://www.woolworths.co.nz/shop/browse/dairy",
                     )
-                output = mock_out.getvalue()
+                output = mock_err.getvalue()
 
         # The default timeout is 5s which is below 15s
         self.assertIn("< 15s", output)
@@ -992,7 +992,7 @@ class ImprovedErrorMessageTests(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 provider = self._make_provider(tmp)
                 session = _FakeSession(200, json.dumps(_API_RESPONSE))
-                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
                     await provider.fetch_products(
                         session=session,
                         url="https://www.woolworths.co.nz/shop/browse/dairy",
@@ -1001,7 +1001,7 @@ class ImprovedErrorMessageTests(unittest.IsolatedAsyncioTestCase):
                         supermarket_name=None,
                         store_name=None,
                     )
-                output = mock_out.getvalue()
+                output = mock_err.getvalue()
         # Should log the endpoint
         self.assertIn("/api/v1/products", output)
         # Should log XSRF-TOKEN status

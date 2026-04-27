@@ -606,6 +606,12 @@ class WoolworthsApiProvider:
         """Return True when the ``WOOLWORTHS_API_DEBUG`` env variable is set."""
         return os.environ.get("WOOLWORTHS_API_DEBUG", "").lower() in ("1", "true", "yes")
 
+    @staticmethod
+    def _debug(msg: str) -> None:
+        """Emit a timestamped debug line to stderr (always flushed immediately in GHA)."""
+        ts = datetime.now().strftime("%H:%M:%S")
+        print(f"[woolworths-api DEBUG {ts}] {msg}", file=sys.stderr, flush=True)
+
     # ── Cookie helpers ─────────────────────────────────────────────────────────
 
     def _load_cookies(self) -> dict[str, str]:
@@ -647,10 +653,9 @@ class WoolworthsApiProvider:
             )
 
         if self._debug_enabled():
-            print(
-                f"[woolworths-api] Loaded {len(cookies)} cookie(s) from {self.cookies_file}; "
-                f"XSRF-TOKEN={'present' if cookies.get('XSRF-TOKEN') else 'missing'}",
-                flush=True,
+            self._debug(f"Loaded {len(cookies)} cookie(s) from {self.cookies_file}")
+            self._debug(
+                f"XSRF-TOKEN: {'✅ Present' if cookies.get('XSRF-TOKEN') else '❌ Missing'}"
             )
 
         if not cookies.get("XSRF-TOKEN"):
@@ -761,20 +766,20 @@ class WoolworthsApiProvider:
 
         if self._debug_enabled():
             ua = headers.get("user-agent", "")
-            print(
-                f"[woolworths-api] → GET {api_url}\n"
-                f"[woolworths-api]   params : {params}\n"
-                f"[woolworths-api]   headers: x-xsrf-token={'present' if xsrf_token else 'MISSING'}, "
-                f"user-agent={ua[:50]}{'…' if len(ua) > 50 else ''}\n"
-                f"[woolworths-api]   timeout: connect={self._CONNECT_TIMEOUT}s "
-                f"read={effective_timeout}s"
-                + (
-                    f" (NOTE: read timeout {effective_timeout}s < 15s standard; "
-                    "increase if unexpected timeouts occur)"
-                    if effective_timeout < 15
-                    else ""
-                ),
-                flush=True,
+            note = (
+                f" (NOTE: read timeout {effective_timeout}s < 15s standard; "
+                "increase if unexpected timeouts occur)"
+                if effective_timeout < 15
+                else ""
+            )
+            self._debug(f"→ GET {api_url}")
+            self._debug(f"  params : {params}")
+            self._debug(
+                f"  headers: x-xsrf-token={'present' if xsrf_token else 'MISSING'}, "
+                f"user-agent={ua[:50]}{'…' if len(ua) > 50 else ''}"
+            )
+            self._debug(
+                f"  timeout: connect={self._CONNECT_TIMEOUT}s read={effective_timeout}s{note}"
             )
 
         _timeout = aiohttp.ClientTimeout(
@@ -795,11 +800,8 @@ class WoolworthsApiProvider:
 
                 if self._debug_enabled():
                     preview = text[:300].replace("\n", " ")
-                    print(
-                        f"[woolworths-api] ← HTTP {status} ({len(text)} bytes)\n"
-                        f"[woolworths-api]   preview: {preview}",
-                        flush=True,
-                    )
+                    self._debug(f"← HTTP {status} ({len(text)} bytes)")
+                    self._debug(f"  preview: {preview}")
 
                 if status in (401, 403):
                     return None, {
@@ -819,10 +821,7 @@ class WoolworthsApiProvider:
                     payload = json.loads(text)
                     if self._debug_enabled():
                         top_keys = list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__
-                        print(
-                            f"[woolworths-api]   JSON top-level keys: {top_keys}",
-                            flush=True,
-                        )
+                        self._debug(f"Response structure: {top_keys}")
                     return None, payload, status
                 except Exception:
                     return None, {"error": "Invalid JSON response", "response": text[:300]}, status
@@ -891,11 +890,10 @@ class WoolworthsApiProvider:
             )
 
             if self._debug_enabled():
-                print(
-                    f"[woolworths-api] products.items contains {len(items)} item(s) "
-                    f"(url={url})",
-                    flush=True,
-                )
+                if items:
+                    self._debug(f"products.items contains {len(items)} item(s) (url={url})")
+                else:
+                    self._debug(f"⚠️ data.products.items is empty (0 items) (url={url})")
 
             if not items:
                 print(
