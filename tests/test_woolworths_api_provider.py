@@ -2,6 +2,7 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -166,7 +167,6 @@ class BuildProviderWoolworthsApiTests(unittest.TestCase):
 
 class CookieLoadingTests(unittest.TestCase):
     def test_load_cookies_reads_playwright_storage_state(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             state_file = Path(tmp) / "state.json"
             state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
@@ -176,7 +176,6 @@ class CookieLoadingTests(unittest.TestCase):
         self.assertEqual(cookies["session"], "abc123")
 
     def test_load_cookies_filters_non_woolworths_domains(self):
-        import tempfile
         state = json.dumps({"cookies": [
             _woolworths_cookie("ww_session", "ww_val"),
             {"name": "other", "value": "val", "domain": ".example.com"},
@@ -191,7 +190,6 @@ class CookieLoadingTests(unittest.TestCase):
 
     def test_load_cookies_accepts_plain_list_format(self):
         """woolies-nz-cli stores cookies as a plain list rather than a dict."""
-        import tempfile
         raw_list = json.dumps([_woolworths_cookie("token", "xyz")])
         with tempfile.TemporaryDirectory() as tmp:
             state_file = Path(tmp) / "cookies.json"
@@ -207,7 +205,6 @@ class CookieLoadingTests(unittest.TestCase):
         self.assertIn("not found", str(ctx.exception))
 
     def test_load_cookies_raises_when_no_woolworths_cookies(self):
-        import tempfile
         state = json.dumps({"cookies": [
             {"name": "x", "value": "y", "domain": ".example.com"},
         ]})
@@ -275,7 +272,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         return WoolworthsApiProvider(cookies_file=str(state_file))
 
     async def test_returns_products_and_snapshots_from_api_response(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -292,7 +288,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(snapshots), 2)
 
     async def test_product_fields_are_mapped_correctly(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -318,7 +313,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anchor_snap.supermarket_name, "Woolworths")
 
     async def test_sale_price_lower_than_original_becomes_promo_price(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -336,7 +330,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lewis.promo_price, "5.99")
 
     async def test_limit_caps_returned_products(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -353,7 +346,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(snapshots), 1)
 
     async def test_query_filter_excludes_non_matching_products(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -371,7 +363,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_banner_items_are_skipped(self):
         """Items with type != 'Product' should be silently skipped."""
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             only_banner = {"products": {"items": [{"type": "Banner", "name": "Promo"}]}}
@@ -389,7 +380,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshots, [])
 
     async def test_auth_failure_raises_runtime_error(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(401, "Unauthorized")
@@ -405,7 +395,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("authentication failed", str(ctx.exception).lower())
 
     async def test_transient_network_error_raises_transient_error(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             import asyncio
@@ -432,7 +421,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_request_includes_woolworths_required_headers(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -452,7 +440,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["x-xsrf-token"], "test-xsrf")
 
     async def test_request_hits_woolworths_api_endpoint(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -468,7 +455,6 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls[0]["url"], "https://www.woolworths.co.nz/api/v1/products")
 
     async def test_supermarket_and_store_name_propagated_to_snapshots(self):
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             provider = self._make_provider(tmp)
             session = _FakeSession(200, json.dumps(_API_RESPONSE))
@@ -484,6 +470,89 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
         for snap in snapshots:
             self.assertEqual(snap.supermarket_name, "Woolworths")
             self.assertEqual(snap.store_name, "Woolworths Karori")
+
+
+# ---------------------------------------------------------------------------
+# Anti-detection headers
+# ---------------------------------------------------------------------------
+
+class AntiDetectionHeaderTests(unittest.IsolatedAsyncioTestCase):
+    def _make_provider(self, tmp_dir: str) -> WoolworthsApiProvider:
+        state_file = Path(tmp_dir) / "state.json"
+        state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
+        return WoolworthsApiProvider(cookies_file=str(state_file))
+
+    async def _get_headers(self, tmp_dir: str) -> dict:
+        provider = self._make_provider(tmp_dir)
+        session = _FakeSession(200, json.dumps(_API_RESPONSE))
+        await provider.fetch_products(
+            session=session,
+            url="https://www.woolworths.co.nz/shop/browse/dairy",
+            query=None,
+            limit=100,
+            supermarket_name=None,
+            store_name=None,
+        )
+        return session.calls[0]["kwargs"]["headers"]
+
+    async def test_request_includes_sec_fetch_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        self.assertEqual(headers["sec-fetch-dest"], "empty")
+        self.assertEqual(headers["sec-fetch-mode"], "cors")
+        self.assertEqual(headers["sec-fetch-site"], "same-origin")
+
+    async def test_request_includes_sec_ch_ua_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        self.assertIn("sec-ch-ua", headers)
+        self.assertEqual(headers["sec-ch-ua-mobile"], "?0")
+        self.assertIn("sec-ch-ua-platform", headers)
+
+    async def test_request_includes_accept_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        self.assertIn("accept-language", headers)
+        self.assertIn("en", headers["accept-language"])
+
+    async def test_request_includes_accept_encoding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        self.assertEqual(headers["accept-encoding"], "gzip, deflate, br")
+
+    async def test_user_agent_varies_across_requests(self):
+        """Different requests should not always use the same User-Agent string."""
+        seen_uas: set[str] = set()
+        # Run enough requests to have a very high probability of seeing >1 UA.
+        # All requests reuse the same provider/state file to avoid repeated I/O.
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            for _ in range(30):
+                session = _FakeSession(200, json.dumps(_API_RESPONSE))
+                await provider.fetch_products(
+                    session=session,
+                    url="https://www.woolworths.co.nz/shop/browse/dairy",
+                    query=None,
+                    limit=100,
+                    supermarket_name=None,
+                    store_name=None,
+                )
+                seen_uas.add(session.calls[0]["kwargs"]["headers"]["user-agent"])
+        self.assertGreater(len(seen_uas), 1, "Expected User-Agent rotation across requests")
+
+    async def test_user_agent_matches_known_browser_profile(self):
+        known_uas = {profile[0] for profile in WoolworthsApiProvider._BROWSER_PROFILES}
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        self.assertIn(headers["user-agent"], known_uas)
+
+    async def test_sec_ch_ua_platform_matches_user_agent(self):
+        """The sec-ch-ua-platform must correspond to the selected User-Agent's profile."""
+        profiles_by_ua = {p[0]: p[2] for p in WoolworthsApiProvider._BROWSER_PROFILES}
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = await self._get_headers(tmp)
+        expected_platform = profiles_by_ua[headers["user-agent"]]
+        self.assertEqual(headers["sec-ch-ua-platform"], expected_platform)
 
 
 if __name__ == "__main__":
