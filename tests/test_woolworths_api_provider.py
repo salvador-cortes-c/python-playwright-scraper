@@ -1,11 +1,13 @@
 """Tests for WoolworthsApiProvider — direct JSON API provider for Woolworths NZ."""
 
+import io
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -557,3 +559,144 @@ class AntiDetectionHeaderTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Timeout / faster-failure
+# ---------------------------------------------------------------------------
+
+class TimeoutConfigTests(unittest.TestCase):
+    def test_default_timeout_is_at_most_15_seconds(self):
+        """Timeout must be ≤15 s so scrapes fail fast rather than hanging."""
+        self.assertLessEqual(WoolworthsApiProvider._DEFAULT_TIMEOUT, 15)
+
+
+# ---------------------------------------------------------------------------
+# Debug flag
+# ---------------------------------------------------------------------------
+
+class DebugFlagTests(unittest.TestCase):
+    def test_debug_disabled_by_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("WOOLWORTHS_API_DEBUG", None)
+            self.assertFalse(WoolworthsApiProvider._debug_enabled())
+
+    def test_debug_enabled_when_env_var_is_1(self):
+        with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "1"}):
+            self.assertTrue(WoolworthsApiProvider._debug_enabled())
+
+    def test_debug_enabled_when_env_var_is_true(self):
+        with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "true"}):
+            self.assertTrue(WoolworthsApiProvider._debug_enabled())
+
+    def test_debug_disabled_when_env_var_is_zero(self):
+        with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "0"}):
+            self.assertFalse(WoolworthsApiProvider._debug_enabled())
+
+
+# ---------------------------------------------------------------------------
+# XSRF-TOKEN validation
+# ---------------------------------------------------------------------------
+
+class XsrfCookieValidationTests(unittest.TestCase):
+    def test_warns_when_xsrf_token_missing(self):
+        """A warning must be printed when no XSRF-TOKEN is present."""
+        state = _make_storage_state([
+            _woolworths_cookie("session", "abc123"),  # no XSRF-TOKEN
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = Path(tmp) / "state.json"
+            state_file.write_text(state, encoding="utf-8")
+            provider = WoolworthsApiProvider(cookies_file=str(state_file))
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                provider._load_cookies()
+            output = mock_out.getvalue()
+        self.assertIn("XSRF-TOKEN", output)
+        self.assertIn("WARNING", output)
+
+    def test_no_warning_when_xsrf_token_present(self):
+        """No warning should be emitted when XSRF-TOKEN is present."""
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = Path(tmp) / "state.json"
+            state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
+            provider = WoolworthsApiProvider(cookies_file=str(state_file))
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                provider._load_cookies()
+            output = mock_out.getvalue()
+        self.assertNotIn("WARNING", output)
+
+
+# ---------------------------------------------------------------------------
+# Improved error messages
+# ---------------------------------------------------------------------------
+
+class ImprovedErrorMessageTests(unittest.IsolatedAsyncioTestCase):
+    def _make_provider(self, tmp_dir: str) -> WoolworthsApiProvider:
+        state_file = Path(tmp_dir) / "state.json"
+        state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
+        return WoolworthsApiProvider(cookies_file=str(state_file))
+
+    async def test_empty_items_prints_diagnostic_warning(self):
+        """When the API returns zero items, a diagnostic message must be printed."""
+        empty_response = {"products": {"items": []}}
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            session = _FakeSession(200, json.dumps(empty_response))
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                products, snapshots = await provider.fetch_products(
+                    session=session,
+                    url="https://www.woolworths.co.nz/shop/browse/dairy",
+                    query=None,
+                    limit=100,
+                    supermarket_name=None,
+                    store_name=None,
+                )
+            output = mock_out.getvalue()
+        self.assertEqual(products, [])
+        self.assertEqual(snapshots, [])
+        self.assertIn("WARNING", output)
+        self.assertIn("zero items", output)
+
+    async def test_http_400_error_message_mentions_bad_request(self):
+        """HTTP 400 responses should surface a clear 'Bad Request' message."""
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            session = _FakeSession(400, '{"message": "Bad Request"}')
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                products, snapshots = await provider.fetch_products(
+                    session=session,
+                    url="https://www.woolworths.co.nz/shop/browse/dairy",
+                    query=None,
+                    limit=100,
+                    supermarket_name=None,
+                    store_name=None,
+                )
+            output = mock_out.getvalue()
+        self.assertEqual(products, [])
+        self.assertEqual(snapshots, [])
+        self.assertIn("400", output)
+
+    async def test_debug_logging_prints_request_and_response_info(self):
+        """When WOOLWORTHS_API_DEBUG=1, request params and response preview are logged."""
+        with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "1"}):
+            with tempfile.TemporaryDirectory() as tmp:
+                provider = self._make_provider(tmp)
+                session = _FakeSession(200, json.dumps(_API_RESPONSE))
+                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                    await provider.fetch_products(
+                        session=session,
+                        url="https://www.woolworths.co.nz/shop/browse/dairy",
+                        query=None,
+                        limit=100,
+                        supermarket_name=None,
+                        store_name=None,
+                    )
+                output = mock_out.getvalue()
+        # Should log the endpoint
+        self.assertIn("/api/v1/products", output)
+        # Should log XSRF-TOKEN status
+        self.assertIn("x-xsrf-token=present", output)
+        # Should log HTTP status
+        self.assertIn("HTTP 200", output)
+        # Should log item count
+        self.assertIn("items", output)
