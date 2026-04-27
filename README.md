@@ -1,6 +1,6 @@
 # NZ Supermarket Scraper
 
-Scrapes product names, prices, unit prices, promo prices, and images from supported NZ supermarket category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, ZenRows, FloppyData, Oxylabs, direct HTTP) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
+Scrapes product names, prices, unit prices, promo prices, and images from supported NZ supermarket category pages. Supports API-based providers (ScrapingBee, ScraperAPI, Crawlbase, ZenRows, FloppyData, Oxylabs, direct HTTP, woolworths-api) and a real Playwright browser mode, with category discovery, pagination crawling, price history snapshots, resume-on-crash, and exponential-backoff retries.
 
 ## Supported supermarkets
 
@@ -96,6 +96,26 @@ python scraper.py \
   --site-profile woolworths \
   --limit 20 \
   --output woolworths_products.json
+```
+
+Woolworths via the direct JSON API (fastest, no proxy cost — requires a one-off Playwright session first):
+
+```bash
+# Step 1 — create a session (writes storage_state.json; run once, reusable for weeks):
+python scraper.py \
+  --provider playwright \
+  --url "https://www.woolworths.co.nz/shop/browse/fruit-veg" \
+  --site-profile woolworths \
+  --limit 1 --max-pages 1
+
+# Step 2 — scrape via the JSON API (no JS rendering needed):
+python scraper.py \
+  --provider woolworths-api \
+  --url "https://www.woolworths.co.nz/shop/browse/fruit-veg" \
+  --site-profile woolworths \
+  --limit 48 \
+  --output woolworths_products.json \
+  --price-output woolworths_snapshots.json
 ```
 
 Pak'nSave example using the same category-style route shape as New World:
@@ -283,7 +303,7 @@ python scraper.py \
 
 | Flag | Default | Description |
 |---|---|---|
-| `--provider NAME` | `oxylabs` | Scraping service/engine to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`, `playwright`. |
+| `--provider NAME` | `oxylabs` | Scraping service/engine to use. Choices: `scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`, `playwright`, `woolworths-api`. |
 | `--country-code CC` | `nz` | Country code for proxy targeting (e.g. `us`, `gb`, `au`). |
 | `--premium-proxy` / `--no-premium-proxy` | on | Use residential/premium proxies when supported by the provider. |
 | `--render-wait-ms N` | `3000` | Milliseconds to wait for JavaScript rendering (provider-agnostic). Overrides `--scrapingbee-wait-ms` when set. |
@@ -301,6 +321,7 @@ python scraper.py \
 | `zenrows` | `ZENROWS_API_KEY` |
 | `direct` | *(none required)* |
 | `playwright` | *(none required)* |
+| `woolworths-api` | *(none required — reads `storage_state.json` by default; override path with `--api-key /path/to/state.json`)* |
 
 ### Product selectors
 
@@ -415,6 +436,60 @@ delay = min(base × 2^attempt, max) × uniform(0.75, 1.25)
 
 The ±25% jitter prevents multiple workers from retrying in sync.
 
+### Woolworths JSON API provider (`woolworths-api`)
+
+`woolworths-api` bypasses HTML scraping entirely by calling the Woolworths NZ internal JSON endpoint (`/api/v1/products`) with session cookies obtained from a Playwright `storage_state.json` file. No third-party proxy API key is required — the only cost is the one-time Playwright browser session used to create the cookie file.
+
+**How it works:**
+1. The provider reads `storage_state.json` (written by a prior `--provider playwright` run) and extracts the Woolworths session cookies.
+2. It converts the browse/search URL into API query parameters and calls the JSON endpoint directly.
+3. The JSON response is parsed into typed `Product` / `ProductPriceSnapshot` records — no HTML parsing or JS rendering.
+
+**URL patterns supported:**
+
+| URL | API call |
+|---|---|
+| `/shop/browse/<slug>?page=N&size=48` | `?target=browse&category=<slug>&page=N&size=48` |
+| `/shop/category/<slug>?page=N&size=48` | `?target=browse&category=<slug>&page=N&size=48` |
+| `/shop/searchproducts?search=<term>` | `?target=search&search=<term>` |
+
+**Limitations:**
+- `--discover-category-urls` and `--crawl-category-pages` are **not supported** — pass each category URL explicitly with `--url`.
+- Product images are not returned by the API.
+- Session cookies expire after a few weeks; re-run the Playwright step to refresh `storage_state.json`.
+
+**Usage (two steps):**
+
+```bash
+# Step 1 — one-off Playwright session (creates storage_state.json):
+python scraper.py \
+  --provider playwright \
+  --url "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" \
+  --site-profile woolworths \
+  --limit 1 --max-pages 1
+
+# Step 2 — fast JSON API scrape (no proxy needed):
+python scraper.py \
+  --provider woolworths-api \
+  --url "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" \
+  --site-profile woolworths \
+  --limit 100 \
+  --output products.json \
+  --price-output price_snapshots.json
+```
+
+To use a custom session file:
+
+```bash
+python scraper.py \
+  --provider woolworths-api \
+  --api-key /path/to/custom_state.json \
+  --url "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" \
+  --site-profile woolworths
+```
+
+If the API returns HTTP 401 or 403, the session has expired — re-run Step 1 to refresh cookies.
+
 ### Provider fallback strategy
 
 When a primary provider (e.g. `direct`) encounters a rate-limit or bot challenge, the scraper **permanently switches** to the Oxylabs fallback for all remaining pages in that run — it does not revert to the primary provider:
@@ -513,8 +588,9 @@ The workflow `.github/workflows/unified-parallel-scrape.yml` supports scraping m
 | `category_names` | Category to scrape, e.g. `Beer & Wine`. Set to **`all`** to discover and scrape every available category for each supermarket. |
 | `number_of_pages` | Number of pages per category. Set to **`all`** to iterate through every paginated page for each category (no cap). Accepts a positive integer for an explicit limit. |
 | `store_names` | Optional override for the store name |
+| `woolworths_provider` | Provider for the Woolworths job: `playwright` (default) or `woolworths-api` (direct JSON API — faster, no proxy cost). When `woolworths-api` is selected the workflow automatically runs a Playwright session-creation step first to generate `storage_state.json`, then scrapes via the JSON API. |
 
-**Using `all` for `category_names`:** when set, the workflow navigates to each supermarket's discovery URL, uses `--discover-category-urls` to enumerate every available top-level category, and then crawls all their pages. This is equivalent to a full-coverage scrape.
+**Using `all` for `category_names`:** when set, the workflow navigates to each supermarket's discovery URL, uses `--discover-category-urls` to enumerate every available top-level category, and then crawls all their pages. This is equivalent to a full-coverage scrape. Note: `woolworths-api` does not support category discovery; when `woolworths_provider=woolworths-api` and `category_names=all`, the workflow falls back to the default Woolworths category URL and skips discovery.
 
 **Using `all` for `number_of_pages`:** when set, `--max-pages` is passed the string `all` to the scraper, which removes any page cap and iterates every paginated URL discovered for each category.
 
@@ -522,8 +598,17 @@ The workflow `.github/workflows/unified-parallel-scrape.yml` supports scraping m
 - Full coverage scrape: `category_names=all`, `number_of_pages=all`
 - Single category, all pages: `category_names=Beer & Wine`, `number_of_pages=all`
 - Single category, first 3 pages: `category_names=Beer & Wine`, `number_of_pages=3`
+- Woolworths via JSON API: `category_names=Beer & Wine`, `woolworths_provider=woolworths-api`
 
-Each supermarket job uses the `direct` provider with automatic Oxylabs fallback.  Results are uploaded as artifacts (`scrape-results-<supermarket>-<run_id>`) retained for 7 days.
+**Provider strategy per supermarket:**
+
+| Supermarket | Default provider | Notes |
+|---|---|---|
+| `newworld` | `direct` | Automatic Oxylabs fallback on bot challenge |
+| `paknsave` | `direct` | Automatic Oxylabs fallback on Cloudflare block |
+| `woolworths` | `playwright` (or `woolworths-api` via input) | Playwright renders the React SPA; `woolworths-api` calls the JSON endpoint directly after a one-off session step |
+
+Results are uploaded as artifacts (`scrape-results-<supermarket>-<run_id>`) retained for 7 days.
 
 ### Count workflow (stores + categories)
 
@@ -646,6 +731,6 @@ If you need ad-hoc local validation, run the scraper directly with the examples 
 
 ## API-Only Note
 
-When using API-based providers (`scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`), the Playwright-only store/browser flags are accepted by the CLI but have no effect.
+When using API-based providers (`scrapingbee`, `scraperapi`, `crawlbase`, `zenrows`, `floppydata`, `oxylabs`, `direct`, `woolworths-api`), the Playwright-only store/browser flags are accepted by the CLI but have no effect.
 
 `--headed`, `--headless-only`, `--manual-wait-seconds`, `--storage-state`, `--wait-for-selector`, `--choose-store`, `--scrape-all-stores`, `--max-stores`, `--store-name`, `--store-names`, `--store-index`, `--store-ribbon-button-selector`, `--store-change-link-selector`, `--store-bar-selector`
