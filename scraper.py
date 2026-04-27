@@ -537,7 +537,9 @@ class WoolworthsApiProvider:
     # client.  It is included in every API request.  If requests start returning 400
     # errors, check the current value in the browser's network tab.
     _UI_VER = "7.70.51"
-    _DEFAULT_TIMEOUT = 15  # seconds – fail fast rather than waiting the full 30 s
+    _DEFAULT_TIMEOUT = 5   # seconds – fail fast: reduced from 15 s to 5 s
+    _CONNECT_TIMEOUT = 5   # seconds – separate connect-phase timeout
+    _MAX_RETRIES = 3       # retry transient errors this many times
 
     # Each profile is (user-agent, sec-ch-ua, sec-ch-ua-platform).
     # Values are taken from real Chrome/Edge desktop browser sessions on the
@@ -724,7 +726,12 @@ class WoolworthsApiProvider:
 
     # ── Fetch ──────────────────────────────────────────────────────────────────
 
-    async def fetch(self, session: aiohttp.ClientSession, url: str) -> FetchResult:
+    async def fetch(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        timeout: float | None = None,
+    ) -> FetchResult:
         """Low-level fetch — returns ``(None, json_payload_or_error, status)``.
 
         Prefer :meth:`fetch_products` for typed output.  This method is exposed
@@ -733,12 +740,20 @@ class WoolworthsApiProvider:
         receive an error dict and raise a ``RuntimeError``, which is the correct
         behaviour when attempting HTML-oriented operations (category discovery,
         pagination discovery) with this provider.
+
+        Parameters
+        ----------
+        timeout:
+            Per-call read timeout in seconds.  Defaults to ``_DEFAULT_TIMEOUT``
+            (5 s).  Pass a larger value for calls that may legitimately take
+            longer (e.g. first-time session initialisation).
         """
         try:
             cookies = self._load_cookies()
         except RuntimeError as exc:
             return None, {"error": str(exc)}, None
 
+        effective_timeout = timeout if timeout is not None else self._DEFAULT_TIMEOUT
         xsrf_token = cookies.get("XSRF-TOKEN")
         headers = self._request_headers(xsrf_token)
         params = self._build_params(url)
@@ -750,9 +765,22 @@ class WoolworthsApiProvider:
                 f"[woolworths-api] → GET {api_url}\n"
                 f"[woolworths-api]   params : {params}\n"
                 f"[woolworths-api]   headers: x-xsrf-token={'present' if xsrf_token else 'MISSING'}, "
-                f"user-agent={ua[:50]}{'…' if len(ua) > 50 else ''}",
+                f"user-agent={ua[:50]}{'…' if len(ua) > 50 else ''}\n"
+                f"[woolworths-api]   timeout: connect={self._CONNECT_TIMEOUT}s "
+                f"read={effective_timeout}s"
+                + (
+                    f" (NOTE: read timeout {effective_timeout}s < 15s standard; "
+                    "increase if unexpected timeouts occur)"
+                    if effective_timeout < 15
+                    else ""
+                ),
                 flush=True,
             )
+
+        _timeout = aiohttp.ClientTimeout(
+            connect=self._CONNECT_TIMEOUT,
+            sock_read=effective_timeout,
+        )
 
         try:
             async with session.get(
@@ -760,7 +788,7 @@ class WoolworthsApiProvider:
                 params=params,
                 cookies=cookies,
                 headers=headers,
-                timeout=self._DEFAULT_TIMEOUT,
+                timeout=_timeout,
             ) as response:
                 status = response.status
                 text = await response.text()
@@ -799,7 +827,12 @@ class WoolworthsApiProvider:
                 except Exception:
                     return None, {"error": "Invalid JSON response", "response": text[:300]}, status
         except asyncio.TimeoutError:
-            return None, {"error": f"Timeout after {self._DEFAULT_TIMEOUT} seconds"}, None
+            return None, {
+                "error": (
+                    f"Timeout after {effective_timeout}s "
+                    f"(connect={self._CONNECT_TIMEOUT}s, read={effective_timeout}s)"
+                )
+            }, None
         except Exception as exc:
             return None, {"error": str(exc)}, None
 
@@ -817,120 +850,137 @@ class WoolworthsApiProvider:
         Calls ``/api/v1/products``, maps the response items to
         :class:`Product` / :class:`ProductPriceSnapshot` dataclasses, and
         applies the same name-filter and limit logic as the HTML scraper.
+
+        Transient network / timeout errors are retried up to ``_MAX_RETRIES``
+        times with exponential backoff.  Auth failures (HTTP 401/403) and
+        empty-result responses are **not** retried.
         """
-        _, payload, status = await self.fetch(session, url)
+        _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "eof")
 
-        if not isinstance(payload, dict):
-            return [], []
+        for attempt in range(self._MAX_RETRIES + 1):
+            _, payload, status = await self.fetch(session, url)
 
-        if "error" in payload:
-            err = str(payload["error"])
-            if status in (401, 403):
-                raise RuntimeError(err)
-            _TRANSIENT_SIGNALS = ("timeout", "timed out", "connection", "refused", "reset", "eof")
-            if any(t in err.lower() for t in _TRANSIENT_SIGNALS):
-                raise TransientError(f"Transient error for {url}: {err}")
-            print(f"WARNING: [woolworths-api] {err}", flush=True)
-            return [], []
+            if not isinstance(payload, dict):
+                return [], []
 
-        products_block = payload.get("products")
-        items: list[Any] = (
-            products_block.get("items", [])
-            if isinstance(products_block, dict)
-            else []
-        )
+            if "error" in payload:
+                err = str(payload["error"])
+                if status in (401, 403):
+                    raise RuntimeError(err)
+                if any(t in err.lower() for t in _TRANSIENT_SIGNALS):
+                    exc = TransientError(f"Transient error for {url}: {err}")
+                    if attempt < self._MAX_RETRIES:
+                        delay = _compute_backoff(attempt, 1.0, 30.0)
+                        print(
+                            f"WARNING: [woolworths-api] Transient error on attempt "
+                            f"{attempt + 1}/{self._MAX_RETRIES + 1}: {err}. "
+                            f"Retrying in {delay:.1f}s…",
+                            flush=True,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise exc
+                print(f"WARNING: [woolworths-api] {err}", flush=True)
+                return [], []
 
-        if self._debug_enabled():
-            print(
-                f"[woolworths-api] products.items contains {len(items)} item(s) "
-                f"(url={url})",
-                flush=True,
+            products_block = payload.get("products")
+            items: list[Any] = (
+                products_block.get("items", [])
+                if isinstance(products_block, dict)
+                else []
             )
 
-        if not items:
-            print(
-                f"WARNING: [woolworths-api] API returned zero items for {url}. "
-                "Possible causes: session cookies expired, invalid category slug, "
-                "or the API response structure has changed. "
-                "Set WOOLWORTHS_API_DEBUG=1 for full response details.",
-                flush=True,
-            )
-
-        query_normalized = query.strip().lower() if query else ""
-        resolved_supermarket = supermarket_name or "Woolworths"
-        resolved_store = store_name or resolved_supermarket
-        scraped_at = datetime.now(timezone.utc).isoformat()
-
-        products: list[Product] = []
-        snapshots: list[ProductPriceSnapshot] = []
-
-        for item in items:
-            if not isinstance(item, dict) or item.get("type") != "Product":
-                continue
-            if len(products) >= limit:
-                break
-
-            name = _clean_text(str(item.get("name") or ""))
-            if not name or _looks_like_price_only_name(name):
-                continue
-            if query_normalized and query_normalized not in name.lower():
-                continue
-
-            price_info: dict[str, Any] = item.get("price") or {}
-            size_info: dict[str, Any] = item.get("size") or {}
-
-            original_price = price_info.get("originalPrice")
-            sale_price = price_info.get("salePrice")
-
-            price_str = f"{original_price:.2f}" if isinstance(original_price, (int, float)) else ""
-            promo_price_str = ""
-            if (
-                isinstance(sale_price, (int, float))
-                and isinstance(original_price, (int, float))
-                and sale_price < original_price
-            ):
-                promo_price_str = f"{sale_price:.2f}"
-
-            cup_price = size_info.get("cupPrice")
-            cup_measure = _clean_text(str(size_info.get("cupMeasure") or ""))
-            unit_price_str = (
-                f"${cup_price:.2f}/{cup_measure}"
-                if isinstance(cup_price, (int, float)) and cup_measure
-                else ""
-            )
-
-            volume_size = _clean_text(str(size_info.get("volumeSize") or ""))
-            packaging_format = (
-                _extract_packaging_from_name(name)
-                or _extract_packaging_from_name(volume_size)
-                or _extract_packaging_format(unit_price_str)
-            )
-            normalized_name = _normalize_product_name(name)
-            product_key = _product_key(normalized_name, packaging_format)
-
-            products.append(
-                Product(
-                    product_key=product_key,
-                    name=name,
-                    packaging_format=packaging_format,
-                    image="",
+            if self._debug_enabled():
+                print(
+                    f"[woolworths-api] products.items contains {len(items)} item(s) "
+                    f"(url={url})",
+                    flush=True,
                 )
-            )
-            snapshots.append(
-                ProductPriceSnapshot(
-                    product_key=product_key,
-                    supermarket_name=resolved_supermarket,
-                    price=price_str,
-                    unit_price=unit_price_str,
-                    source_url=url,
-                    scraped_at=scraped_at,
-                    promo_price=promo_price_str,
-                    promo_unit_price="",
-                    store_name=resolved_store,
-                )
-            )
 
-        return products, snapshots
+            if not items:
+                print(
+                    f"WARNING: [woolworths-api] API returned zero items for {url}. "
+                    "Possible causes: session cookies expired, invalid category slug, "
+                    "or the API response structure has changed. "
+                    "Set WOOLWORTHS_API_DEBUG=1 for full response details.",
+                    flush=True,
+                )
+
+            query_normalized = query.strip().lower() if query else ""
+            resolved_supermarket = supermarket_name or "Woolworths"
+            resolved_store = store_name or resolved_supermarket
+            scraped_at = datetime.now(timezone.utc).isoformat()
+
+            products: list[Product] = []
+            snapshots: list[ProductPriceSnapshot] = []
+
+            for item in items:
+                if not isinstance(item, dict) or item.get("type") != "Product":
+                    continue
+                if len(products) >= limit:
+                    break
+
+                name = _clean_text(str(item.get("name") or ""))
+                if not name or _looks_like_price_only_name(name):
+                    continue
+                if query_normalized and query_normalized not in name.lower():
+                    continue
+
+                price_info: dict[str, Any] = item.get("price") or {}
+                size_info: dict[str, Any] = item.get("size") or {}
+
+                original_price = price_info.get("originalPrice")
+                sale_price = price_info.get("salePrice")
+
+                price_str = f"{original_price:.2f}" if isinstance(original_price, (int, float)) else ""
+                promo_price_str = ""
+                if (
+                    isinstance(sale_price, (int, float))
+                    and isinstance(original_price, (int, float))
+                    and sale_price < original_price
+                ):
+                    promo_price_str = f"{sale_price:.2f}"
+
+                cup_price = size_info.get("cupPrice")
+                cup_measure = _clean_text(str(size_info.get("cupMeasure") or ""))
+                unit_price_str = (
+                    f"${cup_price:.2f}/{cup_measure}"
+                    if isinstance(cup_price, (int, float)) and cup_measure
+                    else ""
+                )
+
+                volume_size = _clean_text(str(size_info.get("volumeSize") or ""))
+                packaging_format = (
+                    _extract_packaging_from_name(name)
+                    or _extract_packaging_from_name(volume_size)
+                    or _extract_packaging_format(unit_price_str)
+                )
+                normalized_name = _normalize_product_name(name)
+                product_key = _product_key(normalized_name, packaging_format)
+
+                products.append(
+                    Product(
+                        product_key=product_key,
+                        name=name,
+                        packaging_format=packaging_format,
+                        image="",
+                    )
+                )
+                snapshots.append(
+                    ProductPriceSnapshot(
+                        product_key=product_key,
+                        supermarket_name=resolved_supermarket,
+                        price=price_str,
+                        unit_price=unit_price_str,
+                        source_url=url,
+                        scraped_at=scraped_at,
+                        promo_price=promo_price_str,
+                        promo_unit_price="",
+                        store_name=resolved_store,
+                    )
+                )
+
+            return products, snapshots
 
 
 AnyProvider = ScrapingBeeProvider | ScraperAPIProvider | CrawlbaseProvider | ZenrowsProvider | FloppyDataProvider | OxylabsProvider | DirectProvider | WoolworthsApiProvider

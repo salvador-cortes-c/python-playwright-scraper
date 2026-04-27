@@ -412,15 +412,16 @@ class FetchProductsTests(unittest.IsolatedAsyncioTestCase):
                 async def __aexit__(self, *_):
                     return False
 
-            with self.assertRaises(TransientError):
-                await provider.fetch_products(
-                    session=_TimeoutSession(),
-                    url="https://www.woolworths.co.nz/shop/browse/dairy",
-                    query=None,
-                    limit=100,
-                    supermarket_name=None,
-                    store_name=None,
-                )
+            with patch("scraper.asyncio.sleep", return_value=None):
+                with self.assertRaises(TransientError):
+                    await provider.fetch_products(
+                        session=_TimeoutSession(),
+                        url="https://www.woolworths.co.nz/shop/browse/dairy",
+                        query=None,
+                        limit=100,
+                        supermarket_name=None,
+                        store_name=None,
+                    )
 
     async def test_request_includes_woolworths_required_headers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -569,6 +570,315 @@ class TimeoutConfigTests(unittest.TestCase):
     def test_default_timeout_is_at_most_15_seconds(self):
         """Timeout must be ≤15 s so scrapes fail fast rather than hanging."""
         self.assertLessEqual(WoolworthsApiProvider._DEFAULT_TIMEOUT, 15)
+
+    def test_default_timeout_is_5_seconds(self):
+        """Timeout must be exactly 5 s to fail fast on network issues."""
+        self.assertEqual(WoolworthsApiProvider._DEFAULT_TIMEOUT, 5)
+
+    def test_connect_timeout_exists_and_is_5_seconds(self):
+        """A separate connect timeout of 5 s must be defined."""
+        self.assertTrue(hasattr(WoolworthsApiProvider, "_CONNECT_TIMEOUT"))
+        self.assertEqual(WoolworthsApiProvider._CONNECT_TIMEOUT, 5)
+
+    def test_max_retries_exists(self):
+        """A _MAX_RETRIES class attribute must be defined for retry logic."""
+        self.assertTrue(hasattr(WoolworthsApiProvider, "_MAX_RETRIES"))
+        self.assertGreater(WoolworthsApiProvider._MAX_RETRIES, 0)
+
+
+# ---------------------------------------------------------------------------
+# Retry logic
+# ---------------------------------------------------------------------------
+
+class RetryLogicTests(unittest.IsolatedAsyncioTestCase):
+    def _make_provider(self, tmp_dir: str) -> WoolworthsApiProvider:
+        state_file = Path(tmp_dir) / "state.json"
+        state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
+        return WoolworthsApiProvider(cookies_file=str(state_file))
+
+    async def test_transient_error_is_retried_up_to_max_retries(self):
+        """Transient errors must be retried _MAX_RETRIES times before raising."""
+        import asyncio
+
+        call_count = 0
+
+        class _AlwaysTimeoutSession:
+            def get(self, *args, **kwargs):
+                return _AlwaysTimeoutResponse()
+
+        class _AlwaysTimeoutResponse:
+            async def __aenter__(self):
+                nonlocal call_count
+                call_count += 1
+                raise asyncio.TimeoutError()
+
+            async def __aexit__(self, *_):
+                return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            with patch("scraper.asyncio.sleep", return_value=None):
+                with self.assertRaises(TransientError):
+                    await provider.fetch_products(
+                        session=_AlwaysTimeoutSession(),
+                        url="https://www.woolworths.co.nz/shop/browse/dairy",
+                        query=None,
+                        limit=100,
+                        supermarket_name=None,
+                        store_name=None,
+                    )
+
+        # Initial attempt + _MAX_RETRIES retries
+        self.assertEqual(call_count, WoolworthsApiProvider._MAX_RETRIES + 1)
+
+    async def test_auth_error_is_not_retried(self):
+        """HTTP 401/403 errors must raise RuntimeError immediately without retrying."""
+        call_count = 0
+
+        class _AuthErrorSession:
+            def get(self, *args, **kwargs):
+                return _AuthErrorResponse()
+
+        class _AuthErrorResponse:
+            async def __aenter__(self):
+                nonlocal call_count
+                call_count += 1
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            @property
+            def status(self):
+                return 401
+
+            async def text(self):
+                return "Unauthorized"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            with self.assertRaises(RuntimeError):
+                await provider.fetch_products(
+                    session=_AuthErrorSession(),
+                    url="https://www.woolworths.co.nz/shop/browse/dairy",
+                    query=None,
+                    limit=100,
+                    supermarket_name=None,
+                    store_name=None,
+                )
+
+        # Must not retry: only 1 call expected
+        self.assertEqual(call_count, 1)
+
+    async def test_empty_result_is_not_retried(self):
+        """Empty product lists must be returned immediately without retrying."""
+        call_count = 0
+
+        class _EmptySession:
+            def get(self, *args, **kwargs):
+                return _EmptyResponse()
+
+        class _EmptyResponse:
+            async def __aenter__(self):
+                nonlocal call_count
+                call_count += 1
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            @property
+            def status(self):
+                return 200
+
+            async def text(self):
+                return json.dumps({"products": {"items": []}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            products, snapshots = await provider.fetch_products(
+                session=_EmptySession(),
+                url="https://www.woolworths.co.nz/shop/browse/dairy",
+                query=None,
+                limit=100,
+                supermarket_name=None,
+                store_name=None,
+            )
+
+        self.assertEqual(products, [])
+        self.assertEqual(snapshots, [])
+        # Empty results are not retried: only 1 call expected
+        self.assertEqual(call_count, 1)
+
+    async def test_retry_warning_is_printed_on_transient_error(self):
+        """A warning must be printed on each retry attempt."""
+        import asyncio
+
+        class _AlwaysTimeoutSession:
+            def get(self, *args, **kwargs):
+                return _AlwaysTimeoutResponse()
+
+        class _AlwaysTimeoutResponse:
+            async def __aenter__(self):
+                raise asyncio.TimeoutError()
+
+            async def __aexit__(self, *_):
+                return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            with patch("scraper.asyncio.sleep", return_value=None):
+                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                    with self.assertRaises(TransientError):
+                        await provider.fetch_products(
+                            session=_AlwaysTimeoutSession(),
+                            url="https://www.woolworths.co.nz/shop/browse/dairy",
+                            query=None,
+                            limit=100,
+                            supermarket_name=None,
+                            store_name=None,
+                        )
+                output = mock_out.getvalue()
+
+        self.assertIn("WARNING", output)
+        self.assertIn("Retrying", output)
+
+
+# ---------------------------------------------------------------------------
+# Per-call timeout override and connection timeout
+# ---------------------------------------------------------------------------
+
+class FetchTimeoutOverrideTests(unittest.IsolatedAsyncioTestCase):
+    def _make_provider(self, tmp_dir: str) -> WoolworthsApiProvider:
+        state_file = Path(tmp_dir) / "state.json"
+        state_file.write_text(_MINIMAL_STATE, encoding="utf-8")
+        return WoolworthsApiProvider(cookies_file=str(state_file))
+
+    async def test_fetch_uses_aiohttp_client_timeout(self):
+        """fetch() must pass an aiohttp.ClientTimeout to the session."""
+        import aiohttp
+
+        received_timeout = None
+
+        class _CapturingSession:
+            def get(self, *args, **kwargs):
+                nonlocal received_timeout
+                received_timeout = kwargs.get("timeout")
+                return _OkResponse()
+
+        class _OkResponse:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            @property
+            def status(self):
+                return 200
+
+            async def text(self):
+                return json.dumps(_API_RESPONSE)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            await provider.fetch(
+                session=_CapturingSession(),
+                url="https://www.woolworths.co.nz/shop/browse/dairy",
+            )
+
+        self.assertIsInstance(received_timeout, aiohttp.ClientTimeout)
+
+    async def test_fetch_uses_per_call_timeout_when_provided(self):
+        """fetch() must respect the per-call timeout argument."""
+        import aiohttp
+
+        received_timeout = None
+
+        class _CapturingSession:
+            def get(self, *args, **kwargs):
+                nonlocal received_timeout
+                received_timeout = kwargs.get("timeout")
+                return _OkResponse()
+
+        class _OkResponse:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            @property
+            def status(self):
+                return 200
+
+            async def text(self):
+                return json.dumps(_API_RESPONSE)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            await provider.fetch(
+                session=_CapturingSession(),
+                url="https://www.woolworths.co.nz/shop/browse/dairy",
+                timeout=30,
+            )
+
+        self.assertIsNotNone(received_timeout)
+        # The sock_read should equal the per-call override
+        self.assertEqual(received_timeout.sock_read, 30)
+
+    async def test_fetch_separates_connect_and_read_timeouts(self):
+        """fetch() must use _CONNECT_TIMEOUT for connect and _DEFAULT_TIMEOUT for read."""
+        import aiohttp
+
+        received_timeout = None
+
+        class _CapturingSession:
+            def get(self, *args, **kwargs):
+                nonlocal received_timeout
+                received_timeout = kwargs.get("timeout")
+                return _OkResponse()
+
+        class _OkResponse:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            @property
+            def status(self):
+                return 200
+
+            async def text(self):
+                return json.dumps(_API_RESPONSE)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            await provider.fetch(
+                session=_CapturingSession(),
+                url="https://www.woolworths.co.nz/shop/browse/dairy",
+            )
+
+        self.assertIsNotNone(received_timeout)
+        self.assertEqual(received_timeout.connect, WoolworthsApiProvider._CONNECT_TIMEOUT)
+        self.assertEqual(received_timeout.sock_read, WoolworthsApiProvider._DEFAULT_TIMEOUT)
+
+    async def test_debug_log_mentions_timeout_below_15s(self):
+        """When WOOLWORTHS_API_DEBUG=1 and timeout < 15s, a note is logged."""
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = self._make_provider(tmp)
+            session = _FakeSession(200, json.dumps(_API_RESPONSE))
+            with patch.dict(os.environ, {"WOOLWORTHS_API_DEBUG": "1"}):
+                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                    await provider.fetch(
+                        session=session,
+                        url="https://www.woolworths.co.nz/shop/browse/dairy",
+                    )
+                output = mock_out.getvalue()
+
+        # The default timeout is 5s which is below 15s
+        self.assertIn("< 15s", output)
 
 
 # ---------------------------------------------------------------------------
