@@ -1,0 +1,229 @@
+name: Woolworths API Scrape
+
+on:
+  workflow_dispatch:
+    inputs:
+      category_names:
+        description: 'Comma-separated list of category names (e.g., "Beer & Wine", "Health & Body"), or "all" to scrape every category'
+        required: true
+        default: 'Beer & Wine'
+      number_of_pages:
+        description: 'Number of pages to scrape per category ("all" for all pages, or specific number)'
+        required: true
+        default: 'all'
+      store_names:
+        description: 'Optional store name (default: "Karori Woolworths")'
+        required: false
+        default: ''
+      timeout_minutes:
+        description: 'Job timeout in minutes (default: 120)'
+        required: false
+        default: '120'
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    name: Scrape woolworths (woolworths-api) - ${{ github.event.inputs.category_names }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(github.event.inputs.timeout_minutes || '120') }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install firefox
+          python -m playwright install-deps firefox
+
+      - name: Determine store name
+        id: store_name
+        run: |
+          STORE_NAMES_INPUT="${{ github.event.inputs.store_names }}"
+          if [ -n "$STORE_NAMES_INPUT" ]; then
+            echo "store_name=$STORE_NAMES_INPUT" >> $GITHUB_OUTPUT
+            echo "Using provided store: $STORE_NAMES_INPUT"
+          else
+            echo "store_name=Karori Woolworths" >> $GITHUB_OUTPUT
+            echo "Using default store: Karori Woolworths"
+          fi
+
+      - name: Determine category URL
+        id: category_url
+        run: |
+          CATEGORY_NAME="${{ github.event.inputs.category_names }}"
+
+          if [ "$CATEGORY_NAME" = "all" ]; then
+            echo "url=https://www.woolworths.co.nz/shop" >> $GITHUB_OUTPUT
+            echo "discover_all_categories=true" >> $GITHUB_OUTPUT
+            echo "Scraping ALL categories for woolworths"
+            echo "::warning::woolworths-api does not support category discovery — scraping the provided URL only (no additional categories will be enumerated)"
+          else
+            echo "discover_all_categories=false" >> $GITHUB_OUTPUT
+            case "$CATEGORY_NAME" in
+              "Beer & Wine"|"Beer and Wine"|"Beer, Wine & Cider")
+                echo "url=https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" >> $GITHUB_OUTPUT
+                ;;
+              "Health & Body"|"Health and Body")
+                echo "url=https://www.woolworths.co.nz/shop/browse/health-beauty?page=1&size=48" >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "url=https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" >> $GITHUB_OUTPUT
+                echo "Warning: Using default URL for category '$CATEGORY_NAME'"
+                ;;
+            esac
+          fi
+
+          echo "Using URL: $(grep '^url=' $GITHUB_OUTPUT | tail -1 | cut -d= -f2-)"
+
+      - name: Determine max pages parameter
+        id: max_pages
+        run: |
+          NUMBER_OF_PAGES="${{ github.event.inputs.number_of_pages }}"
+          if [ "$NUMBER_OF_PAGES" = "all" ]; then
+            echo "max_pages=all" >> $GITHUB_OUTPUT
+            echo "Scraping all pages (no cap)"
+          else
+            if [[ "$NUMBER_OF_PAGES" =~ ^[0-9]+$ ]]; then
+              echo "max_pages=$NUMBER_OF_PAGES" >> $GITHUB_OUTPUT
+              echo "Scraping $NUMBER_OF_PAGES pages"
+            else
+              echo "max_pages=3" >> $GITHUB_OUTPUT
+              echo "Invalid number_of_pages, defaulting to 3 pages"
+            fi
+          fi
+
+      - name: Create Woolworths API session
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          echo "🍪 Creating Woolworths session via Playwright (required for woolworths-api)..."
+          # A minimal headless Playwright run: visits the site, saves storage_state.json with
+          # fresh session cookies, then exits after 1 product. The file is read by the
+          # woolworths-api provider in the scrape step below.
+          python -u scraper.py \
+            --provider playwright \
+            --url "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" \
+            --site-profile woolworths \
+            --limit 1 \
+            --max-pages 1 \
+            --output /dev/null
+          if [ -f storage_state.json ]; then
+            # Verify the file is non-empty and contains a valid JSON cookies array
+            COOKIE_COUNT=$(python -c "import json,sys; d=json.load(open('storage_state.json')); print(len(d.get('cookies',[])))" 2>/dev/null || echo "0")
+            if [ "$COOKIE_COUNT" = "0" ]; then
+              echo "::error::storage_state.json exists but contains no cookies — Playwright session may not have authenticated"
+              exit 1
+            fi
+            echo "✅ storage_state.json created with $COOKIE_COUNT cookie(s)"
+          else
+            echo "::error::storage_state.json was not created — Playwright session failed"
+            exit 1
+          fi
+
+      - name: Run scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONUNBUFFERED: '1'
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+        run: |
+          echo "🚀 Starting woolworths scrape (woolworths-api) - ${{ github.event.inputs.category_names }}"
+          echo "📦 Store: ${{ steps.store_name.outputs.store_name }}"
+          echo "🔗 URL: ${{ steps.category_url.outputs.url }}"
+          echo "📄 Max pages: ${{ steps.max_pages.outputs.max_pages }}"
+          echo "⚙️  Provider: woolworths-api"
+
+          python -u scraper.py \
+            --url "${{ steps.category_url.outputs.url }}" \
+            --site-profile woolworths \
+            --provider woolworths-api \
+            --store-name "${{ steps.store_name.outputs.store_name }}" \
+            --max-pages ${{ steps.max_pages.outputs.max_pages }} \
+            --limit 100 \
+            --output products_woolworths_${{ github.run_id }}.json \
+            --price-output price_snapshots_woolworths_${{ github.run_id }}.json \
+            --delay-seconds 1.0 \
+            --delay-jitter-seconds 0.5
+
+      - name: Verify scrape results and write health report
+        if: always()
+        run: |
+          PRODUCTS_FILE="products_woolworths_${{ github.run_id }}.json"
+          SNAPSHOTS_FILE="price_snapshots_woolworths_${{ github.run_id }}.json"
+
+          echo "📊 Verifying scrape results for woolworths (provider: woolworths-api)..."
+
+          if [ -f "$PRODUCTS_FILE" ]; then
+            PRODUCT_COUNT=$(python -c "import json,sys; data=json.load(open('$PRODUCTS_FILE')); print(len(data) if isinstance(data,list) else 0)" 2>/dev/null || echo "0")
+            echo "   Products scraped: $PRODUCT_COUNT"
+          else
+            PRODUCT_COUNT=0
+            echo "   ⚠️  Products file not found: $PRODUCTS_FILE"
+          fi
+
+          if [ -f "$SNAPSHOTS_FILE" ]; then
+            SNAPSHOT_COUNT=$(python -c "import json,sys; data=json.load(open('$SNAPSHOTS_FILE')); print(len(data) if isinstance(data,list) else 0)" 2>/dev/null || echo "0")
+            echo "   Price snapshots scraped: $SNAPSHOT_COUNT"
+          else
+            SNAPSHOT_COUNT=0
+            echo "   ⚠️  Snapshots file not found: $SNAPSHOTS_FILE"
+          fi
+
+          SCRAPE_FAILED=false
+          if [ "$PRODUCT_COUNT" = "0" ] && [ "$SNAPSHOT_COUNT" = "0" ]; then
+            HEALTH_ICON="❌"
+            HEALTH_STATUS="No data scraped — check provider logs for errors."
+            echo "::error::No products or price snapshots were scraped for woolworths. Check the 'Run scraper' step logs for details."
+            SCRAPE_FAILED=true
+          elif [ "$PRODUCT_COUNT" -lt 10 ] 2>/dev/null; then
+            HEALTH_ICON="⚠️"
+            HEALTH_STATUS="Only $PRODUCT_COUNT product(s) scraped — likely incomplete. Check scraper logs for errors."
+            echo "::warning::Only $PRODUCT_COUNT product(s) scraped — may be incomplete."
+          else
+            HEALTH_ICON="✅"
+            HEALTH_STATUS="Healthy — $PRODUCT_COUNT products and $SNAPSHOT_COUNT price snapshots scraped."
+            echo "✅ Scrape results verified: $PRODUCT_COUNT products, $SNAPSHOT_COUNT snapshots"
+          fi
+
+          {
+            echo "## $HEALTH_ICON Woolworths (woolworths-api) Scrape Health"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Supermarket | woolworths |"
+            echo "| Provider | woolworths-api |"
+            echo "| Store | ${{ steps.store_name.outputs.store_name }} |"
+            echo "| URL | ${{ steps.category_url.outputs.url }} |"
+            echo "| Category mode | ${{ github.event.inputs.category_names }} |"
+            echo "| Max pages (total cap) | ${{ steps.max_pages.outputs.max_pages }} |"
+            echo "| **Products scraped** | **$PRODUCT_COUNT** |"
+            echo "| **Price snapshots** | **$SNAPSHOT_COUNT** |"
+            echo "| Status | $HEALTH_STATUS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SCRAPE_FAILED" = "true" ]; then
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-results-woolworths-${{ github.run_id }}
+          path: |
+            products_woolworths_${{ github.run_id }}.json
+            price_snapshots_woolworths_${{ github.run_id }}.json
+          retention-days: 7

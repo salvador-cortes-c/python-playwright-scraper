@@ -23,10 +23,6 @@ on:
         description: 'Per-job timeout in minutes (default: 120; increase for "all" categories across large sites)'
         required: false
         default: '120'
-      woolworths_provider:
-        description: 'Provider for the Woolworths job: "playwright" (default) or "woolworths-api" (direct JSON API — faster, no proxy cost; a Playwright session-creation step runs automatically first)'
-        required: false
-        default: 'playwright'
 
 permissions:
   contents: read
@@ -42,11 +38,6 @@ jobs:
         id: set-matrix
         run: |
           SUPERMARKETS="${{ github.event.inputs.supermarkets }}"
-          WOOLWORTHS_PROVIDER="${{ github.event.inputs.woolworths_provider }}"
-          # Default to playwright if the input is empty or unrecognised
-          if [ "$WOOLWORTHS_PROVIDER" != "woolworths-api" ]; then
-            WOOLWORTHS_PROVIDER="playwright"
-          fi
 
           # Configuration map for each supermarket
           declare -A SITE_PROFILE=( [newworld]="newworld" [paknsave]="paknsave" [woolworths]="woolworths" )
@@ -58,8 +49,9 @@ jobs:
           )
           # PAKn'SAVE and New World use --provider direct with automatic oxylabs fallback.
           # When direct is blocked by Cloudflare, the scraper automatically retries via Oxylabs.
-          # Woolworths provider is controlled by the woolworths_provider workflow input.
-          declare -A PROVIDER=( [newworld]="direct" [paknsave]="direct" [woolworths]="$WOOLWORTHS_PROVIDER" )
+          # Woolworths uses playwright (headless browser; React SPA needs JS rendering).
+          # For the woolworths-api provider use the dedicated woolworths-api-scrape workflow.
+          declare -A PROVIDER=( [newworld]="direct" [paknsave]="direct" [woolworths]="playwright" )
 
           INCLUDES="[]"
           IFS=',' read -ra SM_LIST <<< "$SUPERMARKETS"
@@ -224,35 +216,6 @@ jobs:
             fi
           fi
 
-      - name: Create Woolworths API session (woolworths-api only)
-        if: matrix.supermarket == 'woolworths' && matrix.provider == 'woolworths-api'
-        env:
-          PYTHONUNBUFFERED: '1'
-        run: |
-          echo "🍪 Creating Woolworths session via Playwright (required for woolworths-api)..."
-          # A minimal headless Playwright run: visits the site, saves storage_state.json with
-          # fresh session cookies, then exits after 1 product. The file is read by the
-          # woolworths-api provider in the scrape step below.
-          python -u scraper.py \
-            --provider playwright \
-            --url "https://www.woolworths.co.nz/shop/browse/beer-wine?page=1&size=48" \
-            --site-profile woolworths \
-            --limit 1 \
-            --max-pages 1 \
-            --output /dev/null
-          if [ -f storage_state.json ]; then
-            # Verify the file is non-empty and contains a valid JSON cookies array
-            COOKIE_COUNT=$(python -c "import json,sys; d=json.load(open('storage_state.json')); print(len(d.get('cookies',[])))" 2>/dev/null || echo "0")
-            if [ "$COOKIE_COUNT" = "0" ]; then
-              echo "::error::storage_state.json exists but contains no cookies — Playwright session may not have authenticated"
-              exit 1
-            fi
-            echo "✅ storage_state.json created with $COOKIE_COUNT cookie(s)"
-          else
-            echo "::error::storage_state.json was not created — Playwright session failed"
-            exit 1
-          fi
-
       - name: Run scraper with automatic provider fallback
         env:
           SCRAPING_PROVIDER_API_KEY: ${{ secrets.SCRAPING_PROVIDER_API_KEY }}
@@ -276,25 +239,17 @@ jobs:
           # Build optional flags
           EXTRA_FLAGS=()
 
-          # woolworths-api does not support category discovery or pagination crawling.
-          # All other providers support both flags normally.
-          if [ "${{ matrix.provider }}" != "woolworths-api" ]; then
-            if [ "${{ steps.category_url.outputs.discover_all_categories }}" = "true" ]; then
-              EXTRA_FLAGS+=(--discover-category-urls)
-              echo "🗂️  Discovering all categories for ${{ matrix.supermarket }}"
-            fi
-            EXTRA_FLAGS+=(--crawl-category-pages)
-          else
-            if [ "${{ steps.category_url.outputs.discover_all_categories }}" = "true" ]; then
-              echo "::warning::woolworths-api does not support category discovery — scraping the provided URL only (no additional categories will be enumerated)"
-            fi
+          if [ "${{ steps.category_url.outputs.discover_all_categories }}" = "true" ]; then
+            EXTRA_FLAGS+=(--discover-category-urls)
+            echo "🗂️  Discovering all categories for ${{ matrix.supermarket }}"
           fi
+          EXTRA_FLAGS+=(--crawl-category-pages)
 
           # Run scraper using the per-supermarket provider.
           # - newworld      → direct (with automatic oxylabs fallback)
           # - paknsave      → direct (with automatic oxylabs fallback on Cloudflare challenge)
           # - woolworths    → playwright (headless browser; React SPA needs JS rendering)
-          #                   OR woolworths-api (direct JSON endpoint; no proxy needed)
+          #                   For woolworths-api use the dedicated woolworths-api-scrape workflow.
           python -u scraper.py \
             --url "${{ steps.category_url.outputs.url }}" \
             --site-profile ${{ matrix.site_profile }} \
@@ -402,7 +357,7 @@ jobs:
           echo "⚙️  Providers used:"
           echo "   newworld   → direct         (with automatic oxylabs fallback)"
           echo "   paknsave   → direct         (with automatic oxylabs fallback on Cloudflare challenge)"
-          echo "   woolworths → ${{ github.event.inputs.woolworths_provider || 'playwright' }}"
+          echo "   woolworths → playwright      (headless browser; React SPA needs JS rendering)"
           echo ""
           echo "💾 Data persisted to PostgreSQL database"
           echo "📦 Per-supermarket artifacts uploaded (retention: 7 days)"
@@ -411,14 +366,6 @@ jobs:
 
       - name: Write overall summary
         run: |
-          WOOLWORTHS_PROVIDER="${{ github.event.inputs.woolworths_provider || 'playwright' }}"
-          if [ "$WOOLWORTHS_PROVIDER" = "woolworths-api" ]; then
-            WW_PROVIDER_CELL="\`woolworths-api\`"
-            WW_REASON_CELL="Direct JSON API — no proxy cost; Playwright session created automatically"
-          else
-            WW_PROVIDER_CELL="\`playwright\`"
-            WW_REASON_CELL="React SPA — category links require JavaScript rendering"
-          fi
           {
             echo "# 🛒 Unified Scrape Run Summary"
             echo ""
@@ -435,7 +382,7 @@ jobs:
             echo "|-------------|----------|--------|"
             echo "| newworld | \`direct\` (+ oxylabs fallback) | Standard HTTP works; Oxylabs auto-fallback on bot challenge |"
             echo "| paknsave | \`direct\` (+ oxylabs fallback) | Tries direct first; Oxylabs auto-fallback when Cloudflare blocks |"
-            echo "| woolworths | $WW_PROVIDER_CELL | $WW_REASON_CELL |"
+            echo "| woolworths | \`playwright\` | React SPA — category links require JavaScript rendering |"
             echo ""
             echo "## Per-supermarket results"
             echo ""
