@@ -538,14 +538,56 @@ class WoolworthsApiProvider:
     # errors, check the current value in the browser's network tab.
     _UI_VER = "7.70.51"
     _DEFAULT_TIMEOUT = 30  # seconds
+
+    # Each profile is (user-agent, sec-ch-ua, sec-ch-ua-platform).
+    # Values are taken from real Chrome/Edge desktop browser sessions on the
+    # platforms most common among New Zealand shoppers.
+    _BROWSER_PROFILES: list[tuple[str, str, str]] = [
+        (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            '"Windows"',
+        ),
+        (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            '"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"',
+            '"Windows"',
+        ),
+        (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            '"macOS"',
+        ),
+        (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            '"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"',
+            '"macOS"',
+        ),
+        (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            '"Linux"',
+        ),
+    ]
+
+    # Weighted accept-language values that reflect real NZ browser traffic.
+    _ACCEPT_LANGUAGES: list[str] = [
+        "en-NZ,en;q=0.9",
+        "en-NZ,en-GB;q=0.9,en;q=0.8",
+        "en-US,en;q=0.9,en-NZ;q=0.8",
+        "en-NZ,en-AU;q=0.9,en;q=0.8",
+    ]
+
     _STATIC_HEADERS: dict[str, str] = {
         "accept": "application/json, text/plain, */*",
+        "accept-encoding": "gzip, deflate, br",
         "x-requested-with": "OnlineShopping.WebApp",
         "x-ui-ver": _UI_VER,
-        "user-agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ),
     }
 
     def __init__(self, cookies_file: str = "storage_state.json") -> None:
@@ -597,7 +639,16 @@ class WoolworthsApiProvider:
         return cookies
 
     def _request_headers(self, xsrf_token: str | None) -> dict[str, str]:
+        ua, sec_ch_ua, platform = random.choice(self._BROWSER_PROFILES)
         headers = dict(self._STATIC_HEADERS)
+        headers["user-agent"] = ua
+        headers["accept-language"] = random.choice(self._ACCEPT_LANGUAGES)
+        headers["sec-ch-ua"] = sec_ch_ua
+        headers["sec-ch-ua-mobile"] = "?0"
+        headers["sec-ch-ua-platform"] = platform
+        headers["sec-fetch-dest"] = "empty"
+        headers["sec-fetch-mode"] = "cors"
+        headers["sec-fetch-site"] = "same-origin"
         headers["referer"] = f"{self._BASE_URL}/"
         headers["origin"] = self._BASE_URL
         if xsrf_token:
