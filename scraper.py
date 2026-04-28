@@ -4781,8 +4781,8 @@ async def main() -> None:
             # because the endpoint is not rate-limited by Cloudflare); otherwise fall
             # back to the global --delay-seconds / --delay-jitter-seconds arguments.
             if hasattr(active_provider, "DELAY_SECONDS_OVERRIDE"):
-                _delay_s = float(active_provider.DELAY_SECONDS_OVERRIDE)
-                _jitter_s = max(0.0, float(active_provider.DELAY_JITTER_OVERRIDE))
+                _delay_s = max(0.0, float(active_provider.DELAY_SECONDS_OVERRIDE))
+                _jitter_s = max(0.0, float(getattr(active_provider, "DELAY_JITTER_OVERRIDE", 0.0)))
             else:
                 _delay_s = max(0.0, float(args.delay_seconds))
                 _jitter_s = max(0.0, float(args.delay_jitter_seconds))
