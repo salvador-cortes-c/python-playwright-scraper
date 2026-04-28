@@ -4846,8 +4846,10 @@ async def main() -> None:
         print("[Scraper] ⚠️  Run stopped early due to rate limiting", flush=True)
     print("[Scraper] ═══════════════════════════════════════════════════", flush=True)
 
-    # Post-scrape semantic deduplication (always runs when scraping completes)
-    if DeduplicationIntegration:
+    # Post-scrape semantic deduplication — skipped for woolworths-api because the
+    # API already returns deduplicated data; deduplication is only needed for
+    # webpage scrapers where HTML parsing may produce duplicate-looking entries.
+    if DeduplicationIntegration and args.provider != "woolworths-api":
         try:
             print("\n[Dedup] Starting post-scrape semantic deduplication...", flush=True)
             dedup = DeduplicationIntegration(
