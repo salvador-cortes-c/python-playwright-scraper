@@ -3814,15 +3814,6 @@ async def scrape_url(
             supermarket_name=supermarket_name,
             store_name=store_name,
         )
-        # Use provider-specific delay overrides instead of the global
-        # --delay-seconds / --delay-jitter-seconds values.  The JSON API
-        # endpoint is not rate-limited by Cloudflare, so a much shorter pause
-        # is sufficient.
-        delay_s = provider.DELAY_SECONDS_OVERRIDE
-        jitter_s = max(0.0, provider.DELAY_JITTER_OVERRIDE)
-        if delay_s > 0:
-            wait_seconds = delay_s + random.random() * jitter_s
-            await asyncio.sleep(wait_seconds)
         return products, snapshots
 
     html, error, status = await provider.fetch(session, url)
@@ -4784,6 +4775,20 @@ async def main() -> None:
                     snapshots=all_snapshots,
                     categories=discovered_categories_all,
                 )
+
+            # Apply inter-request delay.  Use provider-specific overrides when the
+            # active provider defines them (e.g. woolworths-api uses short delays
+            # because the endpoint is not rate-limited by Cloudflare); otherwise fall
+            # back to the global --delay-seconds / --delay-jitter-seconds arguments.
+            if hasattr(active_provider, "DELAY_SECONDS_OVERRIDE"):
+                _delay_s = float(active_provider.DELAY_SECONDS_OVERRIDE)
+                _jitter_s = max(0.0, float(active_provider.DELAY_JITTER_OVERRIDE))
+            else:
+                _delay_s = max(0.0, float(args.delay_seconds))
+                _jitter_s = max(0.0, float(args.delay_jitter_seconds))
+            if _delay_s > 0:
+                _wait = _delay_s + random.random() * _jitter_s
+                await asyncio.sleep(_wait)
 
         merged: dict[str, Product] = {}
         merged_order: list[str] = []
