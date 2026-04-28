@@ -554,6 +554,12 @@ python scraper_deduplication_integration.py \
 
 Or pass `--dedup-auto-threshold` / `--dedup-review-threshold` to `scraper.py` directly (Layer 2 runs automatically after the scrape when `--persist-db` is active).
 
+To skip deduplication entirely for a run (e.g. quick test runs or API-based providers like `woolworths-api`), pass `--skip-deduplication`:
+
+```bash
+python scraper.py --url "..." --provider woolworths-api --skip-deduplication
+```
+
 ### Legacy data migration
 
 To retroactively apply Layer 1 normalization to existing Neon DB records (rename keys, merge duplicates, redirect price snapshots and product_categories):

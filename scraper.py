@@ -4263,6 +4263,11 @@ async def main() -> None:
         default=0.85,
         help="Similarity threshold for exporting consolidation suggestions for review (default: 0.85).",
     )
+    parser.add_argument(
+        "--skip-deduplication",
+        action="store_true",
+        help="Skip the post-scrape semantic deduplication step entirely (useful for quick test runs or API-based providers).",
+    )
 
     args = parser.parse_args()
     if args.count_category_pages:
@@ -4846,8 +4851,10 @@ async def main() -> None:
         print("[Scraper] ⚠️  Run stopped early due to rate limiting", flush=True)
     print("[Scraper] ═══════════════════════════════════════════════════", flush=True)
 
-    # Post-scrape semantic deduplication (always runs when scraping completes)
-    if DeduplicationIntegration:
+    # Post-scrape semantic deduplication (skipped when --skip-deduplication is set)
+    if args.skip_deduplication:
+        print("\n[Dedup] Skipping deduplication (--skip-deduplication flag set).", flush=True)
+    elif DeduplicationIntegration:
         try:
             print("\n[Dedup] Starting post-scrape semantic deduplication...", flush=True)
             dedup = DeduplicationIntegration(
