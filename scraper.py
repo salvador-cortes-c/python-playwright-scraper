@@ -541,6 +541,14 @@ class WoolworthsApiProvider:
     _CONNECT_TIMEOUT = 5   # seconds – separate connect-phase timeout
     _MAX_RETRIES = 3       # retry transient errors this many times
 
+    # Provider-specific inter-request delays.  The woolworths-api endpoint calls
+    # a direct internal JSON API that is not protected by Cloudflare or similar
+    # rate-limiting middleware, so aggressive delays are unnecessary.  These
+    # values are used by scrape_url() in place of the global --delay-seconds /
+    # --delay-jitter-seconds arguments whenever this provider is active.
+    DELAY_SECONDS_OVERRIDE: float = 0.1
+    DELAY_JITTER_OVERRIDE: float = 0.05
+
     # Each profile is (user-agent, sec-ch-ua, sec-ch-ua-platform).
     # Values are taken from real Chrome/Edge desktop browser sessions on the
     # platforms most common among New Zealand shoppers.
@@ -3798,7 +3806,7 @@ async def scrape_url(
     store_name: str | None = None,
 ) -> tuple[list[Product], list[ProductPriceSnapshot]]:
     if isinstance(provider, WoolworthsApiProvider):
-        return await provider.fetch_products(
+        products, snapshots = await provider.fetch_products(
             session=session,
             url=url,
             query=args.query,
@@ -3806,6 +3814,16 @@ async def scrape_url(
             supermarket_name=supermarket_name,
             store_name=store_name,
         )
+        # Use provider-specific delay overrides instead of the global
+        # --delay-seconds / --delay-jitter-seconds values.  The JSON API
+        # endpoint is not rate-limited by Cloudflare, so a much shorter pause
+        # is sufficient.
+        delay_s = provider.DELAY_SECONDS_OVERRIDE
+        jitter_s = max(0.0, provider.DELAY_JITTER_OVERRIDE)
+        if delay_s > 0:
+            wait_seconds = delay_s + random.random() * jitter_s
+            await asyncio.sleep(wait_seconds)
+        return products, snapshots
 
     html, error, status = await provider.fetch(session, url)
 

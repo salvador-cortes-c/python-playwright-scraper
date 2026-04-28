@@ -162,9 +162,7 @@ jobs:
             --max-pages ${{ steps.max_pages.outputs.max_pages }} \
             --limit 100 \
             --output products_woolworths_${{ github.run_id }}.json \
-            --price-output price_snapshots_woolworths_${{ github.run_id }}.json \
-            --delay-seconds 1.0 \
-            --delay-jitter-seconds 0.5
+            --price-output price_snapshots_woolworths_${{ github.run_id }}.json
 
       - name: Verify scrape results and write health report
         if: always()
