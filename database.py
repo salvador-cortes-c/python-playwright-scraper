@@ -130,6 +130,42 @@ def _normalize_name_for_key(name: str) -> str:
     return result
 
 
+def _strip_packaging_suffix_for_key(name: str) -> str:
+    """Strip trailing packaging-size tokens from a product name for key generation.
+
+    When a product name already embeds its size (e.g. "Squealing Pig Rose 750mL"),
+    that size component should not appear in the key's name portion because it is
+    already captured in the packaging suffix.  Removing the duplicate avoids
+    creating two separate product records when the same product is scraped with
+    and without the size embedded in the title.
+
+    Only numeric size tokens (e.g. "750mL", "12x330mL", "6 pack") are stripped;
+    container-type words like "Bottle" or "Can" are intentionally preserved so
+    that genuinely different packaging variants remain distinct.
+
+    Returns the original *name* unchanged if stripping would leave an empty string.
+
+    Examples::
+
+        "Squealing Pig Rose 750mL"           → "Squealing Pig Rose"
+        "Asahi Super Dry Lager Bottle 12x330mL" → "Asahi Super Dry Lager Bottle"
+        "Boundary Road Lager Cans 6 x 330ml" → "Boundary Road Lager Cans"
+        "Boundary Road Lager Cans"           → "Boundary Road Lager Cans"  (unchanged)
+    """
+    result = name.rstrip()
+    while True:
+        last_m: re.Match | None = None
+        for last_m in _PACKAGING_IN_NAME_RE.finditer(result):
+            pass  # walk to the last match
+        if last_m is None or last_m.end() < len(result):
+            break
+        stripped = result[: last_m.start()].rstrip()
+        if not stripped:
+            break  # never strip the entire name
+        result = stripped
+    return result
+
+
 def _normalize_packaging(packaging: str) -> str:
     """Normalize a packaging string for use in a product key.
 
@@ -165,7 +201,10 @@ def _normalize_product_record(
     else:
         clean_packaging = _normalize_packaging(clean_packaging)
 
-    key_name = _normalize_name_for_key(clean_name)
+    # Strip trailing packaging-size tokens from the name before building the key
+    # so that "Wine X 750mL" and "Wine X" with packaging_format="750mL" share a key.
+    key_base = _strip_packaging_suffix_for_key(clean_name) if clean_packaging else clean_name
+    key_name = _normalize_name_for_key(key_base)
     clean_key = f"{key_name}_{clean_packaging.lower()}" if clean_packaging else key_name
     return clean_key, clean_name, clean_packaging
 

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Choose whether to inspect the DB, backfill missing links, backfill supermarkets, or dedupe price snapshots"
+        description: "Choose whether to inspect the DB, backfill missing links, backfill supermarkets, dedupe price snapshots, or report cross-store snapshots"
         required: true
         default: analyze
         type: choice
@@ -13,6 +13,7 @@ on:
           - backfill
           - backfill-supermarkets
           - dedupe-snapshots
+          - report-cross-store
 
 jobs:
   database-maintenance:
@@ -38,6 +39,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import sys
           from pathlib import Path
 
           import psycopg
@@ -46,6 +48,44 @@ jobs:
           if not os.getenv("DATABASE_URL"):
               raise SystemExit("DATABASE_URL secret is not set")
 
+          # ── report-cross-store ──────────────────────────────────────────────
+          # Returns the 20 most recently scraped products present in all three
+          # supermarkets, formatted as a Markdown table for easy review.
+          if action == "report-cross-store":
+              sql = Path("db/recent_cross_store_snapshots.sql").read_text(encoding="utf-8")
+              with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+                  with conn.cursor() as cur:
+                      cur.execute(sql)
+                      rows = cur.fetchall()
+
+              header = "| Product Name | Store | Price |"
+              divider = "|---|---|---|"
+              table_lines = [header, divider]
+              for product_name, store, price in rows:
+                  safe_name  = str(product_name).replace("|", "\\|")
+                  safe_store = str(store).replace("|", "\\|")
+                  safe_price = str(price).replace("|", "\\|")
+                  table_lines.append(f"| {safe_name} | {safe_store} | {safe_price} |")
+
+              table_md = "\n".join(table_lines)
+
+              title = "## 🛒 20 Most Recent Cross-Store Price Snapshots\n"
+              subtitle = (
+                  "_Products present in all three supermarkets (New World, Pak'nSave, Woolworths), "
+                  "ordered alphabetically by product name._\n"
+              )
+              full_report = f"{title}\n{subtitle}\n{table_md}\n"
+
+              print(full_report)
+
+              # Also write to the Actions step summary so it renders in the UI.
+              summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_path:
+                  with open(summary_path, "a", encoding="utf-8") as fh:
+                      fh.write(full_report)
+              sys.exit(0)
+
+          # ── generic SQL file runner ─────────────────────────────────────────
           file_map = {
               "analyze": Path("db/analyze_data_quality.sql"),
               "backfill": Path("db/backfill_product_categories.sql"),
